@@ -7,3 +7,4 @@ python-multipart
 python-dotenv
 pyjwt
 pwdlib[argon2]
+psycopg[binary]
