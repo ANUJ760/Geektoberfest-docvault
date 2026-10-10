@@ -12,7 +12,9 @@ app = FastAPI(title="Document Management System API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for MVP, change in production
+    allow_origins=[
+        "https://doc-vault-lac.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
