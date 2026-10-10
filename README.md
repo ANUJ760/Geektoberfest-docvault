@@ -2,6 +2,20 @@
 
 A simple, open-source Document Management System built with FastAPI and React. This repository is intended as a beginner-friendly project for open-source contributions.
 
+## 🌐 Live Demo
+
+Try DocVault online:
+
+- **Frontend:** https://doc-vault-lac.vercel.app
+- **Backend API:** https://docvault-backend-iv5x.onrender.com
+- **API Documentation:** https://docvault-backend-iv5x.onrender.com/docs
+
+The frontend is deployed on Vercel, and the FastAPI backend is hosted on Render.
+
+**Note:** The backend may take a little time to respond after a period of inactivity. Please allow a few seconds for it to wake up.
+
+
+
 ## Features
 
 - **User Authentication:** Register and log in securely with JWT
