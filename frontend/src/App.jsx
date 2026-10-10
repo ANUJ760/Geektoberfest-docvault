@@ -1,33 +1,54 @@
-import { useState, useEffect } from 'react';
-import { getDocuments, getFolders, uploadDocument, deleteDocument, createFolder, deleteFolder, searchDocuments, login, register, getMe } from './api';
-import { FiDownload, FiTrash2, FiFolder, FiFile, FiUpload, FiSearch, FiFolderPlus, FiLogOut, FiUser } from 'react-icons/fi';
+import { useState, useEffect } from "react";
+import {
+  getDocuments,
+  getFolders,
+  uploadDocument,
+  deleteDocument,
+  createFolder,
+  deleteFolder,
+  searchDocuments,
+  login,
+  register,
+  getMe,
+} from "./api";
+import {
+  FiDownload,
+  FiTrash2,
+  FiFolder,
+  FiFile,
+  FiUpload,
+  FiSearch,
+  FiFolderPlus,
+  FiLogOut,
+  FiUser,
+} from "react-icons/fi";
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(localStorage.getItem("token"));
   const [user, setUser] = useState(null);
 
   // Auth States
   const [isLoginView, setIsLoginView] = useState(true);
-  const [authUsername, setAuthUsername] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authUsername, setAuthUsername] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
 
   // App States
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolder, setSelectedFolder] = useState(null);
-  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderName, setNewFolderName] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('token', token);
+      localStorage.setItem("token", token);
       fetchMe();
     } else {
-      localStorage.removeItem('token');
+      localStorage.removeItem("token");
       setUser(null);
     }
   }, [token]);
@@ -47,11 +68,13 @@ function App() {
   const fetchDocuments = async () => {
     if (!token) return;
     try {
-      const res = await (searchQuery ? searchDocuments(searchQuery) : getDocuments());
+      const res = await (searchQuery
+        ? searchDocuments(searchQuery)
+        : getDocuments());
       setDocuments(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch documents');
+      setError("Failed to fetch documents");
     }
   };
 
@@ -62,7 +85,7 @@ function App() {
       setFolders(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch folders');
+      setError("Failed to fetch folders");
     }
   };
 
@@ -72,7 +95,7 @@ function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    setAuthError('');
+    setAuthError("");
     try {
       if (isLoginView) {
         const res = await login(authUsername, authPassword);
@@ -80,11 +103,11 @@ function App() {
       } else {
         await register(authUsername, authEmail, authPassword);
         setIsLoginView(true);
-        setAuthError('Registration successful. Please log in.');
+        setAuthError("Registration successful. Please log in.");
       }
     } catch (err) {
       console.error(err);
-      setAuthError(err.response?.data?.detail || 'Authentication failed');
+      setAuthError(err.response?.data?.detail || "Authentication failed");
     }
   };
 
@@ -97,9 +120,9 @@ function App() {
     if (!uploadFile) return;
 
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    formData.append("file", uploadFile);
     if (selectedFolder) {
-      formData.append('folder_id', selectedFolder);
+      formData.append("folder_id", selectedFolder);
     }
 
     try {
@@ -108,7 +131,7 @@ function App() {
       fetchDocuments();
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Upload failed');
+      setError(err.response?.data?.detail || "Upload failed");
     }
   };
 
@@ -118,7 +141,7 @@ function App() {
       fetchDocuments();
     } catch (err) {
       console.error(err);
-      setError('Failed to delete document');
+      setError("Failed to delete document");
     }
   };
 
@@ -127,11 +150,11 @@ function App() {
     if (!newFolderName.trim()) return;
     try {
       await createFolder(newFolderName);
-      setNewFolderName('');
+      setNewFolderName("");
       fetchFolders();
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create folder');
+      setError(err.response?.data?.detail || "Failed to create folder");
     }
   };
 
@@ -143,12 +166,12 @@ function App() {
       fetchDocuments();
     } catch (err) {
       console.error(err);
-      setError('Failed to delete folder');
+      setError("Failed to delete folder");
     }
   };
 
-  const filteredDocuments = selectedFolder 
-    ? documents.filter(doc => doc.folder_id === selectedFolder)
+  const filteredDocuments = selectedFolder
+    ? documents.filter((doc) => doc.folder_id === selectedFolder)
     : documents;
 
   if (!token) {
@@ -160,60 +183,73 @@ function App() {
               <FiFolder /> DocVault
             </h1>
             <h2 className="mt-4 text-xl font-semibold text-gray-900">
-              {isLoginView ? 'Sign in to your account' : 'Create a new account'}
+              {isLoginView ? "Sign in to your account" : "Create a new account"}
             </h2>
           </div>
           <form className="space-y-4" onSubmit={handleAuth}>
             {authError && (
-              <div className={`p-3 rounded text-sm ${authError.includes('successful') ? 'bg-green-50 text-green-700 border-green-500' : 'bg-red-50 text-red-700 border-red-500'} border-l-4`}>
+              <div
+                className={`p-3 rounded text-sm ${authError.includes("successful") ? "bg-green-50 text-green-700 border-green-500" : "bg-red-50 text-red-700 border-red-500"} border-l-4`}
+              >
                 {authError}
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Username</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Username
+              </label>
               <input
                 type="text"
                 required
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                 value={authUsername}
-                onChange={e => setAuthUsername(e.target.value)}
+                onChange={(e) => setAuthUsername(e.target.value)}
               />
             </div>
             {!isLoginView && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Email
+                </label>
                 <input
                   type="email"
                   required
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   value={authEmail}
-                  onChange={e => setAuthEmail(e.target.value)}
+                  onChange={(e) => setAuthEmail(e.target.value)}
                 />
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
               <input
                 type="password"
                 required
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                 value={authPassword}
-                onChange={e => setAuthPassword(e.target.value)}
+                onChange={(e) => setAuthPassword(e.target.value)}
               />
             </div>
             <button
               type="submit"
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              {isLoginView ? 'Sign in' : 'Register'}
+              {isLoginView ? "Sign in" : "Register"}
             </button>
           </form>
           <div className="mt-6 text-center text-sm">
             <button
-              onClick={() => { setIsLoginView(!isLoginView); setAuthError(''); }}
+              onClick={() => {
+                setIsLoginView(!isLoginView);
+                setAuthError("");
+              }}
               className="text-indigo-600 hover:text-indigo-500"
             >
-              {isLoginView ? 'Need an account? Register' : 'Already have an account? Sign in'}
+              {isLoginView
+                ? "Need an account? Register"
+                : "Already have an account? Sign in"}
             </button>
           </div>
         </div>
@@ -229,9 +265,9 @@ function App() {
         </h1>
         <div className="relative w-1/3">
           <FiSearch className="absolute left-3 top-3 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Search documents..." 
+          <input
+            type="text"
+            placeholder="Search documents..."
             className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -243,7 +279,7 @@ function App() {
               <FiUser /> {user.username}
             </span>
           )}
-          <button 
+          <button
             onClick={handleLogout}
             className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm font-medium"
           >
@@ -253,7 +289,6 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-8 flex gap-8">
-        
         {/* Sidebar */}
         <aside className="w-64 flex-shrink-0">
           <div className="bg-white p-4 rounded-xl shadow-sm border mb-6">
@@ -262,22 +297,22 @@ function App() {
             </h2>
             <ul className="space-y-2">
               <li>
-                <button 
+                <button
                   onClick={() => setSelectedFolder(null)}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${selectedFolder === null ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-100'}`}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${selectedFolder === null ? "bg-indigo-50 text-indigo-700 font-medium" : "hover:bg-gray-100"}`}
                 >
                   All Documents
                 </button>
               </li>
-              {folders.map(folder => (
+              {folders.map((folder) => (
                 <li key={folder.id} className="flex items-center group">
-                  <button 
+                  <button
                     onClick={() => setSelectedFolder(folder.id)}
-                    className={`flex-1 text-left px-3 py-2 rounded-lg transition-colors truncate ${selectedFolder === folder.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-gray-100'}`}
+                    className={`flex-1 text-left px-3 py-2 rounded-lg transition-colors truncate ${selectedFolder === folder.id ? "bg-indigo-50 text-indigo-700 font-medium" : "hover:bg-gray-100"}`}
                   >
                     {folder.name}
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDeleteFolder(folder.id)}
                     className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-2"
                     title="Delete folder"
@@ -287,16 +322,19 @@ function App() {
                 </li>
               ))}
             </ul>
-            
+
             <form onSubmit={handleCreateFolder} className="mt-4 flex gap-2">
-              <input 
-                type="text" 
-                placeholder="New folder..." 
+              <input
+                type="text"
+                placeholder="New folder..."
                 className="flex-1 border w-full rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
               />
-              <button type="submit" className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded">
+              <button
+                type="submit"
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded"
+              >
                 <FiFolderPlus />
               </button>
             </form>
@@ -308,7 +346,9 @@ function App() {
           {error && (
             <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm flex justify-between">
               <p>{error}</p>
-              <button onClick={() => setError('')} className="font-bold">&times;</button>
+              <button onClick={() => setError("")} className="font-bold">
+                &times;
+              </button>
             </div>
           )}
 
@@ -318,13 +358,13 @@ function App() {
               <p className="text-sm text-gray-500">Max size: 10MB</p>
             </div>
             <form onSubmit={handleUpload} className="flex items-center gap-4">
-              <input 
-                type="file" 
+              <input
+                type="file"
                 className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                 onChange={(e) => setUploadFile(e.target.files[0])}
               />
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={!uploadFile}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -351,11 +391,19 @@ function App() {
                     </td>
                   </tr>
                 ) : (
-                  filteredDocuments.map(doc => (
-                    <tr key={doc.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                  filteredDocuments.map((doc) => (
+                    <tr
+                      key={doc.id}
+                      className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                    >
                       <td className="p-4 flex items-center gap-3 overflow-hidden">
                         <FiFile className="text-gray-400 text-xl flex-shrink-0" />
-                        <span className="font-medium text-gray-800 truncate" title={doc.original_filename}>{doc.original_filename}</span>
+                        <span
+                          className="font-medium text-gray-800 truncate"
+                          title={doc.original_filename}
+                        >
+                          {doc.original_filename}
+                        </span>
                       </td>
                       <td className="p-4 text-sm text-gray-500 whitespace-nowrap">
                         {(doc.file_size / 1024 / 1024).toFixed(2)} MB
@@ -365,16 +413,16 @@ function App() {
                       </td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <div className="flex justify-end gap-2">
-                          <a 
-                            href={`http://localhost:8000/documents/${doc.id}/download?token=${token}`} 
-                            target="_blank" 
+                          <a
+                            href={`${API_URL}/documents/${doc.id}/download?token=${token}`}
+                            target="_blank"
                             rel="noreferrer"
                             className="p-2 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                             title="Download"
                           >
                             <FiDownload />
                           </a>
-                          <button 
+                          <button
                             onClick={() => handleDeleteDoc(doc.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Delete"
