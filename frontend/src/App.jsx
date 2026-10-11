@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import {
+import api,{
   getDocuments,
   getFolders,
   uploadDocument,
@@ -42,6 +42,8 @@ function App() {
   const [newFolderName, setNewFolderName] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
+  const [sortBy, setSortBy] = useState("date_desc");
+  const [selectedFileType, setSelectedFileType] = useState("all");
 
   useEffect(() => {
     if (token) {
@@ -65,12 +67,26 @@ function App() {
     }
   };
 
+  // supporting both filter and sort query params
   const fetchDocuments = async () => {
     if (!token) return;
     try {
-      const res = await (searchQuery
-        ? searchDocuments(searchQuery)
-        : getDocuments());
+      if (searchQuery) {
+        const res = await searchDocuments(searchQuery);
+        setDocuments(res.data);
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if (selectedFileType && selectedFileType !== "all") {
+        params.append("file_type", selectedFileType);
+      }
+      if (sortBy && sortBy !== "date_desc") {
+        params.append("sort_by", sortBy);
+      }
+
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const res = await api.get(`/documents/${queryString}`);
       setDocuments(res.data);
     } catch (err) {
       console.error(err);
@@ -91,7 +107,7 @@ function App() {
 
   useEffect(() => {
     if (token) fetchDocuments();
-  }, [searchQuery]);
+  }, [searchQuery, selectedFileType, sortBy]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -374,6 +390,48 @@ function App() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            {/* Filter and Sort Controls */}
+            <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-gray-700">Documents</span>
+              <div className="flex items-center gap-4">
+                {/* File Type Filter */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="fileTypeFilter" className="text-xs font-medium text-gray-600">
+                    Type:
+                  </label>
+                  <select
+                    id="fileTypeFilter"
+                    value={selectedFileType}
+                    onChange={(e) => setSelectedFileType(e.target.value)}
+                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="pdf">PDF</option>
+                    <option value="image">Images</option>
+                    <option value="text">Text / Docs</option>
+                  </select>
+                </div>
+
+                {/* Sort By Control */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="sortByFilter" className="text-xs font-medium text-gray-600">
+                    Sort:
+                  </label>
+                  <select
+                    id="sortByFilter"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="name_desc">Name (Z-A)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b text-gray-600 text-sm">
@@ -387,7 +445,11 @@ function App() {
                 {filteredDocuments.length === 0 ? (
                   <tr>
                     <td colSpan="4" className="p-8 text-center text-gray-500">
-                      No documents found.
+                      {searchQuery
+                        ? `No documents match "${searchQuery}"`
+                        : selectedFileType !== "all"
+                        ? `No ${selectedFileType.toUpperCase()} files found.`
+                        : "No documents found."}
                     </td>
                   </tr>
                 ) : (
