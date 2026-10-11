@@ -136,6 +136,9 @@ function App() {
   };
 
   const handleDeleteDoc = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this document?")) {
+      return;
+    }
     try {
       await deleteDocument(id);
       fetchDocuments();
