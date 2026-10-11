@@ -386,8 +386,18 @@ function App() {
               <tbody>
                 {filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="p-8 text-center text-gray-500">
-                      No documents found.
+                    <td colSpan="4" className="py-12 px-4 text-center">
+                      <div className="flex flex-col items-center justify-center text-gray-500">
+                        <FiFile className="w-12 h-12 text-gray-300 mb-3" />
+                        <h3 className="text-base font-semibold text-gray-700">No documents yet</h3>
+                        <p className="text-sm text-gray-500 mt-1 max-w-sm">
+                          {searchQuery
+                            ? `No documents match "${searchQuery}". Try a different keyword.`
+                            : selectedFolder
+                            ? "This folder is currently empty. Upload a file above to add it here."
+                            : "Your vault is empty. Select a file using the form above to get started!"}
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
