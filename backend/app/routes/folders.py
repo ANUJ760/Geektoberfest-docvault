@@ -25,6 +25,29 @@ def create_folder(folder: schemas.FolderCreate, db: Session = Depends(get_db), c
 def get_folders(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return db.query(models.Folder).filter(models.Folder.owner_id == current_user.id).all()
 
+
+@router.patch("/{folder_id}", response_model=schemas.FolderResponse)
+def rename_folder(folder_id: int, update: schemas.FolderUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    folder = db.query(models.Folder).filter(
+        models.Folder.id == folder_id,
+        models.Folder.owner_id == current_user.id
+    ).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    duplicate = db.query(models.Folder).filter(
+        models.Folder.name == update.name,
+        models.Folder.owner_id == current_user.id,
+        models.Folder.id != folder_id
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Folder already exists")
+
+    folder.name = update.name
+    db.commit()
+    db.refresh(folder)
+    return folder
+
 @router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_folder(folder_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     folder = db.query(models.Folder).filter(
