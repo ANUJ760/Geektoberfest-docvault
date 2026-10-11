@@ -60,9 +60,18 @@ def upload_document(
     db.refresh(new_doc)
     return new_doc
 
+# fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])
-def get_documents(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    return db.query(models.Document).filter(models.Document.owner_id == current_user.id).all()
+def get_documents(db: Session = Depends(get_db), 
+                  current_user: models.User = Depends(auth.get_current_user),
+                  file_type: Optional[str] = None
+                ):
+    query = db.query(models.Document).filter(models.Document.owner_id == current_user.id)
+
+    if file_type and file_type.lower() != "all":
+        query = query.filter(models.Document.content_type.ilike(f"%{file_type}%"))
+
+    return query.all()
 
 @router.get("/search", response_model=List[schemas.DocumentResponse])
 def search_documents(q: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
