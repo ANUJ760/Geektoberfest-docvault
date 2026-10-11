@@ -60,6 +60,7 @@ def upload_document(
     db.refresh(new_doc)
     return new_doc
 
+# fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])
 def get_documents(
     db: Session = Depends(get_db),
