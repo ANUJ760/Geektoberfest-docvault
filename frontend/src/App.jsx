@@ -5,6 +5,7 @@ import {
   uploadDocument,
   deleteDocument,
   createFolder,
+  renameFolder,
   deleteFolder,
   searchDocuments,
   login,
@@ -19,9 +20,19 @@ import {
   FiUpload,
   FiSearch,
   FiFolderPlus,
+  FiEdit2,
   FiLogOut,
   FiUser,
 } from "react-icons/fi";
+
+function folderErrorMessage(err, fallback) {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((error) => error.msg).join("; ") || fallback;
+  }
+  return fallback;
+}
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("token"));
@@ -41,6 +52,12 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [newFolderName, setNewFolderName] = useState("");
+  const [createFolderError, setCreateFolderError] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [editingFolderId, setEditingFolderId] = useState(null);
+  const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderError, setRenameFolderError] = useState("");
+  const [renamingFolder, setRenamingFolder] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
 
@@ -156,14 +173,42 @@ function App() {
 
   const handleCreateFolder = async (e) => {
     e.preventDefault();
-    if (!newFolderName.trim()) return;
+    setCreateFolderError("");
+    if (!newFolderName.trim()) {
+      setCreateFolderError("Folder name cannot be empty or whitespace-only");
+      return;
+    }
+    setCreatingFolder(true);
     try {
-      await createFolder(newFolderName);
+      await createFolder(newFolderName.trim());
       setNewFolderName("");
       fetchFolders();
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || "Failed to create folder");
+      setCreateFolderError(folderErrorMessage(err, "Failed to create folder"));
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleRenameFolder = async (e) => {
+    e.preventDefault();
+    setRenameFolderError("");
+    if (!renameFolderName.trim()) {
+      setRenameFolderError("Folder name cannot be empty or whitespace-only");
+      return;
+    }
+    setRenamingFolder(true);
+    try {
+      const res = await renameFolder(editingFolderId, renameFolderName.trim());
+      setFolders((current) =>
+        current.map((folder) => folder.id === res.data.id ? res.data : folder)
+      );
+      setEditingFolderId(null);
+    } catch (err) {
+      setRenameFolderError(folderErrorMessage(err, "Failed to rename folder"));
+    } finally {
+      setRenamingFolder(false);
     }
   };
 
@@ -314,20 +359,78 @@ function App() {
                 </button>
               </li>
               {folders.map((folder) => (
-                <li key={folder.id} className="flex items-center group">
-                  <button
-                    onClick={() => setSelectedFolder(folder.id)}
-                    className={`flex-1 text-left px-3 py-2 rounded-lg transition-colors truncate ${selectedFolder === folder.id ? "bg-indigo-50 text-indigo-700 font-medium" : "hover:bg-gray-100"}`}
-                  >
-                    {folder.name}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteFolder(folder.id)}
-                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-2"
-                    title="Delete folder"
-                  >
-                    <FiTrash2 />
-                  </button>
+                <li key={folder.id}>
+                  {editingFolderId === folder.id ? (
+                    <form onSubmit={handleRenameFolder} className="space-y-2">
+                      <input
+                        aria-label="Rename folder"
+                        aria-invalid={Boolean(renameFolderError)}
+                        aria-describedby={
+                          renameFolderError ? "rename-folder-error" : undefined
+                        }
+                        autoFocus
+                        className="w-full border rounded px-2 py-1 text-sm"
+                        value={renameFolderName}
+                        disabled={renamingFolder}
+                        onChange={(e) => {
+                          setRenameFolderName(e.target.value);
+                          setRenameFolderError("");
+                        }}
+                      />
+                      {renameFolderError && (
+                        <p id="rename-folder-error" role="alert" className="text-sm text-red-700">
+                          {renameFolderError}
+                        </p>
+                      )}
+                      <div className="flex gap-2 text-sm">
+                        <button
+                          type="submit"
+                          disabled={renamingFolder}
+                          className="bg-indigo-600 text-white rounded px-2 py-1 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          disabled={renamingFolder}
+                          onClick={() => setEditingFolderId(null)}
+                          className="rounded px-2 py-1"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="flex items-center group">
+                      <button
+                        onClick={() => setSelectedFolder(folder.id)}
+                        className={`flex-1 min-w-0 text-left px-3 py-2 rounded-lg transition-colors truncate ${selectedFolder === folder.id ? "bg-indigo-50 text-indigo-700 font-medium" : "hover:bg-gray-100"}`}
+                      >
+                        {folder.name}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={renamingFolder}
+                        onClick={() => {
+                          setEditingFolderId(folder.id);
+                          setRenameFolderName(folder.name);
+                          setRenameFolderError("");
+                        }}
+                        className="text-gray-400 hover:text-indigo-600 p-2"
+                        aria-label={`Rename ${folder.name}`}
+                        title="Rename folder"
+                      >
+                        <FiEdit2 />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFolder(folder.id)}
+                        className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-2"
+                        title="Delete folder"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -336,17 +439,31 @@ function App() {
               <input
                 type="text"
                 placeholder="New folder..."
+                aria-label="New folder name"
+                aria-invalid={Boolean(createFolderError)}
+                aria-describedby={createFolderError ? "create-folder-error" : undefined}
+                disabled={creatingFolder}
                 className="flex-1 border w-full rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500"
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
+                onChange={(e) => {
+                  setNewFolderName(e.target.value);
+                  setCreateFolderError("");
+                }}
               />
               <button
                 type="submit"
+                aria-label="Create folder"
+                disabled={creatingFolder}
                 className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded"
               >
                 <FiFolderPlus />
               </button>
             </form>
+            {createFolderError && (
+              <p id="create-folder-error" role="alert" className="mt-2 text-sm text-red-700">
+                {createFolderError}
+              </p>
+            )}
           </div>
         </aside>
 

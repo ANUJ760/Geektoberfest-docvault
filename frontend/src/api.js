@@ -42,6 +42,7 @@ export const searchDocuments = (q) => api.get(`/documents/search?q=${q}`);
 // Folder endpoints
 export const getFolders = () => api.get('/folders/');
 export const createFolder = (name) => api.post('/folders/', { name });
+export const renameFolder = (id, name) => api.patch(`/folders/${id}`, { name });
 export const deleteFolder = (id) => api.delete(`/folders/${id}`);
 
 export default api;
