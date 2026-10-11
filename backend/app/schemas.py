@@ -66,3 +66,17 @@ class FolderResponse(FolderBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Audit Log Schemas
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: int
+    action: str
+    target_type: str
+    target_id: Optional[int] = None
+    target_name: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

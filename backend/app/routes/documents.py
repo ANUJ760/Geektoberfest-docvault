@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -7,6 +7,7 @@ import uuid
 import shutil
 from .. import models, schemas, auth
 from ..database import get_db
+from ..audit_logger import log_event
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
@@ -15,6 +16,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024 # 10 MB
 
 @router.post("/upload", response_model=schemas.DocumentResponse)
 def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     folder_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
@@ -56,6 +58,18 @@ def upload_document(
     )
 
     db.add(new_doc)
+    db.flush()  # assign new_doc.id before logging
+
+    log_event(
+        db,
+        user_id=current_user.id,
+        action="upload",
+        target_type="document",
+        target_id=new_doc.id,
+        target_name=file.filename,
+        ip_address=request.client.host if request.client else None,
+    )
+
     db.commit()
     db.refresh(new_doc)
     return new_doc
@@ -84,7 +98,7 @@ def search_documents(q: str, db: Session = Depends(get_db), current_user: models
     ).all()
 
 @router.get("/{doc_id}/download")
-def download_document(doc_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def download_document(request: Request, doc_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     doc = db.query(models.Document).filter(
         models.Document.id == doc_id,
         models.Document.owner_id == current_user.id
@@ -95,6 +109,17 @@ def download_document(doc_id: int, db: Session = Depends(get_db), current_user: 
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="File not found on server")
 
+    log_event(
+        db,
+        user_id=current_user.id,
+        action="download",
+        target_type="document",
+        target_id=doc.id,
+        target_name=doc.original_filename,
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
     return FileResponse(
         path=doc.file_path,
         filename=doc.original_filename,
@@ -102,18 +127,33 @@ def download_document(doc_id: int, db: Session = Depends(get_db), current_user: 
     )
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_document(doc_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def delete_document(request: Request, doc_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     doc = db.query(models.Document).filter(
         models.Document.id == doc_id,
         models.Document.owner_id == current_user.id
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
+    # Capture name before deletion so the audit record is meaningful
+    doc_name = doc.original_filename
+
     # Remove file from disk
     if os.path.exists(doc.file_path):
         os.remove(doc.file_path)
 
     db.delete(doc)
+    db.flush()
+
+    log_event(
+        db,
+        user_id=current_user.id,
+        action="delete",
+        target_type="document",
+        target_id=doc_id,
+        target_name=doc_name,
+        ip_address=request.client.host if request.client else None,
+    )
+
     db.commit()
     return None
