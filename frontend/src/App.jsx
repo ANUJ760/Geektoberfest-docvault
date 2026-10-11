@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatFileSize } from "./formatFileSize.js";
 import {
   getDocuments,
   getFolders,
@@ -406,7 +407,7 @@ function App() {
                         </span>
                       </td>
                       <td className="p-4 text-sm text-gray-500 whitespace-nowrap">
-                        {(doc.file_size / 1024 / 1024).toFixed(2)} MB
+                        {formatFileSize(doc.file_size)}
                       </td>
                       <td className="p-4 text-sm text-gray-500 whitespace-nowrap">
                         {new Date(doc.created_at).toLocaleDateString()}
