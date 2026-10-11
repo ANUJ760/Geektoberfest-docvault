@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -48,6 +48,16 @@ class FolderBase(BaseModel):
     name: str
 
 class FolderCreate(FolderBase):
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, name: str) -> str:
+        name = name.strip()
+        if not name:
+            raise ValueError("Folder name cannot be empty or whitespace-only")
+        return name
+
+
+class FolderUpdate(FolderCreate):
     pass
 
 class FolderResponse(FolderBase):
