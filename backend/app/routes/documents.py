@@ -76,17 +76,30 @@ def upload_document(
 
 # fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])
-def get_documents(db: Session = Depends(get_db), 
-                  current_user: models.User = Depends(auth.get_current_user),
-                  file_type: Optional[str] = None
-                ):
+def get_documents(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+    file_type: Optional[str] = None,
+    sort_by: Optional[str] = "date_desc",  # NEW
+):
     query = db.query(models.Document).filter(models.Document.owner_id == current_user.id)
 
+    # File type filter
     if file_type and file_type.lower() != "all":
         query = query.filter(models.Document.content_type.ilike(f"%{file_type}%"))
 
-    return query.all()
+    # Sorting options (Issue #7)
+    if sort_by == "name_asc":
+        query = query.order_by(models.Document.original_filename.asc())
+    elif sort_by == "name_desc":
+        query = query.order_by(models.Document.original_filename.desc())
+    elif sort_by == "date_asc":
+        query = query.order_by(models.Document.created_at.asc())
+    else:
+        # Default: newest first
+        query = query.order_by(models.Document.created_at.desc())
 
+    return query.all()
 @router.get("/search", response_model=List[schemas.DocumentResponse])
 def search_documents(q: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if not q:
