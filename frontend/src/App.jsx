@@ -11,6 +11,7 @@ import {
   login,
   register,
   getMe,
+  getAuditLogs,
 } from "./api";
 import {
   FiDownload,
@@ -23,6 +24,7 @@ import {
   FiEdit2,
   FiLogOut,
   FiUser,
+  FiShield,
 } from "react-icons/fi";
 
 function folderErrorMessage(err, fallback) {
@@ -60,6 +62,11 @@ function App() {
   const [renamingFolder, setRenamingFolder] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -112,6 +119,19 @@ function App() {
     } catch (err) {
       console.error(err);
       setError("Failed to fetch folders");
+    }
+  };
+
+  const fetchAuditLogs = async () => {
+    setAuditLoading(true);
+    try {
+      const res = await getAuditLogs();
+      setAuditLogs(res.data);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch audit logs");
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -333,6 +353,15 @@ function App() {
               <FiUser /> {user.username}
             </span>
           )}
+          <button
+            onClick={() => {
+              setShowAudit(true);
+              fetchAuditLogs();
+            }}
+            className="text-gray-500 hover:text-indigo-600 flex items-center gap-1 text-sm font-medium"
+          >
+            <FiShield /> Audit Log
+          </button>
           <button
             onClick={handleLogout}
             className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm font-medium"
@@ -595,6 +624,99 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* ── Audit Log slide-over panel ── */}
+      {showAudit && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          aria-modal="true"
+          role="dialog"
+          aria-label="Audit Log"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setShowAudit(false)}
+          />
+
+          {/* Panel */}
+          <div className="relative z-10 w-full max-w-lg bg-white shadow-xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <FiShield className="text-indigo-500" /> Audit Log
+              </h2>
+              <button
+                onClick={() => setShowAudit(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none"
+                aria-label="Close audit log"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {auditLoading ? (
+                <p className="text-center text-gray-400 py-8">Loading…</p>
+              ) : auditLogs.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">No audit events yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {auditLogs.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50"
+                    >
+                      {/* Action badge */}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide shrink-0 ${
+                          entry.action === "upload"
+                            ? "bg-green-100 text-green-700"
+                            : entry.action === "download"
+                            ? "bg-blue-100 text-blue-700"
+                            : entry.action === "delete"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {entry.action}
+                      </span>
+
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-sm font-medium text-gray-800 truncate"
+                          title={entry.target_name}
+                        >
+                          {entry.target_name ?? `${entry.target_type} #${entry.target_id}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {new Date(entry.created_at).toLocaleString()}
+                          {entry.ip_address && (
+                            <span className="ml-2 text-gray-300">· {entry.ip_address}</span>
+                          )}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Refresh footer */}
+            <div className="px-6 py-3 border-t flex justify-end">
+              <button
+                onClick={fetchAuditLogs}
+                disabled={auditLoading}
+                className="text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

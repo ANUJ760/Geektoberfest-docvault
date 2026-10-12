@@ -14,6 +14,7 @@ class User(Base):
 
     folders = relationship("Folder", back_populates="owner", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
 
 class Folder(Base):
     __tablename__ = "folders"
@@ -41,3 +42,18 @@ class Document(Base):
 
     folder = relationship("Folder", back_populates="documents")
     owner = relationship("User", back_populates="documents")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String, nullable=False)         # e.g. "upload", "download", "delete"
+    target_type = Column(String, nullable=False)    # e.g. "document"
+    target_id = Column(Integer, nullable=True)      # id of the affected resource
+    target_name = Column(String, nullable=True)     # human-readable name (original_filename)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="audit_logs")
