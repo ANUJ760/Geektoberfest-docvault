@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api, {
+  getDocuments,
   getFolders,
   uploadDocument,
   deleteDocument,
@@ -10,6 +11,7 @@ import api, {
   login,
   register,
   getMe,
+  getAuditLogs,
 } from "./api";
 import {
   FiDownload,
@@ -23,6 +25,7 @@ import {
   FiEdit2,
   FiLogOut,
   FiUser,
+  FiShield,
 } from "react-icons/fi";
 
 function folderErrorMessage(err, fallback) {
@@ -62,6 +65,13 @@ function App() {
   const [renamingFolder, setRenamingFolder] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
+  const [sortBy, setSortBy] = useState("date_desc");
+  const [selectedFileType, setSelectedFileType] = useState("all");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -85,13 +95,26 @@ function App() {
     }
   };
 
+  // supporting both filter and sort query params
   const fetchDocuments = async () => {
     if (!token) return;
     const requestId = ++latestDocumentRequest.current;
     try {
+<<<<<<< HEAD
+=======
+      if (searchQuery) {
+        const res = await searchDocuments(searchQuery);
+        setDocuments(res.data);
+        return;
+      }
+
+>>>>>>> upstream/main
       const params = new URLSearchParams();
       if (selectedFileType && selectedFileType !== "all") {
         params.append("file_type", selectedFileType);
+      }
+      if (sortBy && sortBy !== "date_desc") {
+        params.append("sort_by", sortBy);
       }
 
       const queryString = params.toString() ? `?${params.toString()}` : "";
@@ -117,9 +140,22 @@ function App() {
     }
   };
 
+  const fetchAuditLogs = async () => {
+    setAuditLoading(true);
+    try {
+      const res = await getAuditLogs();
+      setAuditLogs(res.data);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch audit logs");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (token) fetchDocuments();
-  }, [searchQuery, selectedFileType]);
+  }, [searchQuery, selectedFileType, sortBy]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -352,6 +388,15 @@ function App() {
             </span>
           )}
           <button
+            onClick={() => {
+              setShowAudit(true);
+              fetchAuditLogs();
+            }}
+            className="text-gray-500 hover:text-indigo-600 flex items-center gap-1 text-sm font-medium"
+          >
+            <FiShield /> Audit Log
+          </button>
+          <button
             onClick={handleLogout}
             className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm font-medium"
           >
@@ -518,26 +563,48 @@ function App() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          {/* Filter by File Type Control */}
-            <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+            {/* Filter and Sort Controls */}
+            <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
               <span className="text-sm font-semibold text-gray-700">Documents</span>
-              <div className="flex items-center gap-2">
-                <label htmlFor="fileTypeFilter" className="text-xs font-medium text-gray-600">
-                  Type:
-                </label>
-                <select
-                  id="fileTypeFilter"
-                  value={selectedFileType}
-                  onChange={(e) => setSelectedFileType(e.target.value)}
-                  className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="all">All Types</option>
-                  <option value="pdf">PDF</option>
-                  <option value="image">Images</option>
-                  <option value="text">Text / Docs</option>
-                </select>
+              <div className="flex items-center gap-4">
+                {/* File Type Filter */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="fileTypeFilter" className="text-xs font-medium text-gray-600">
+                    Type:
+                  </label>
+                  <select
+                    id="fileTypeFilter"
+                    value={selectedFileType}
+                    onChange={(e) => setSelectedFileType(e.target.value)}
+                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="pdf">PDF</option>
+                    <option value="image">Images</option>
+                    <option value="text">Text / Docs</option>
+                  </select>
+                </div>
+
+                {/* Sort By Control */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="sortByFilter" className="text-xs font-medium text-gray-600">
+                    Sort:
+                  </label>
+                  <select
+                    id="sortByFilter"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="name_desc">Name (Z-A)</option>
+                  </select>
+                </div>
               </div>
             </div>
+
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b text-gray-600 text-sm">
@@ -550,12 +617,18 @@ function App() {
               <tbody>
                 {filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="p-8 text-center text-gray-500">
-                      {searchQuery
-                        ? `No documents match "${searchQuery}"`
-                        : selectedFileType !== "all"
-                        ? `No ${selectedFileType.toUpperCase()} files found.`
-                        : "No documents found."}
+                    <td colSpan="4" className="py-12 px-4 text-center">
+                      <div className="flex flex-col items-center justify-center text-gray-500">
+                        <FiFile className="w-12 h-12 text-gray-300 mb-3" />
+                        <h3 className="text-base font-semibold text-gray-700">No documents yet</h3>
+                        <p className="text-sm text-gray-500 mt-1 max-w-sm">
+                          {searchQuery
+                            ? `No documents match "${searchQuery}". Try a different keyword.`
+                            : selectedFolder
+                            ? "This folder is currently empty. Upload a file above to add it here."
+                            : "Your vault is empty. Select a file using the form above to get started!"}
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -607,6 +680,99 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* ── Audit Log slide-over panel ── */}
+      {showAudit && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          aria-modal="true"
+          role="dialog"
+          aria-label="Audit Log"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setShowAudit(false)}
+          />
+
+          {/* Panel */}
+          <div className="relative z-10 w-full max-w-lg bg-white shadow-xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <FiShield className="text-indigo-500" /> Audit Log
+              </h2>
+              <button
+                onClick={() => setShowAudit(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none"
+                aria-label="Close audit log"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {auditLoading ? (
+                <p className="text-center text-gray-400 py-8">Loading…</p>
+              ) : auditLogs.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">No audit events yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {auditLogs.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50"
+                    >
+                      {/* Action badge */}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide shrink-0 ${
+                          entry.action === "upload"
+                            ? "bg-green-100 text-green-700"
+                            : entry.action === "download"
+                            ? "bg-blue-100 text-blue-700"
+                            : entry.action === "delete"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {entry.action}
+                      </span>
+
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-sm font-medium text-gray-800 truncate"
+                          title={entry.target_name}
+                        >
+                          {entry.target_name ?? `${entry.target_type} #${entry.target_id}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {new Date(entry.created_at).toLocaleString()}
+                          {entry.ip_address && (
+                            <span className="ml-2 text-gray-300">· {entry.ip_address}</span>
+                          )}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Refresh footer */}
+            <div className="px-6 py-3 border-t flex justify-end">
+              <button
+                onClick={fetchAuditLogs}
+                disabled={auditLoading}
+                className="text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
