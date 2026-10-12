@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import api, {
-  getDocuments,
   getFolders,
   uploadDocument,
   deleteDocument,
@@ -66,7 +65,7 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
-  const [selectedFileType, setSelectedFileType] = useState("all");
+
 
   // Audit log state
   const [auditLogs, setAuditLogs] = useState([]);
@@ -100,15 +99,6 @@ function App() {
     if (!token) return;
     const requestId = ++latestDocumentRequest.current;
     try {
-<<<<<<< HEAD
-=======
-      if (searchQuery) {
-        const res = await searchDocuments(searchQuery);
-        setDocuments(res.data);
-        return;
-      }
-
->>>>>>> upstream/main
       const params = new URLSearchParams();
       if (selectedFileType && selectedFileType !== "all") {
         params.append("file_type", selectedFileType);
