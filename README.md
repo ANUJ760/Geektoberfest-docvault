@@ -20,6 +20,7 @@ The frontend is deployed on Vercel, and the FastAPI backend is hosted on Render.
 
 - **User Authentication:** Register and log in securely with JWT
 - Upload and manage personal documents (up to 10MB)
+- Readable document sizes in B, KB, or MB using 1024-based units (up to two decimal places, without trailing zeros); zero-byte files show `0 B` and invalid sizes show `Unknown`
 - Documents and folders are completely private to the owner
 - Download documents
 - Delete documents
@@ -35,7 +36,7 @@ The frontend is deployed on Vercel, and the FastAPI backend is hosted on Render.
 ## Requirements
 
 - Python 3.11+
-- Node.js (v18+ recommended)
+- Node.js 22.12+ (or Node.js 20.x starting at 20.19)
 - PostgreSQL
 
 ## Setup Instructions
@@ -134,6 +135,17 @@ npm install
 npm test
 npm run lint
 npm run build
+```
+
+## Frontend Checks
+
+From the repository root:
+
+```bash
+npm ci --prefix frontend
+node --test frontend/src/formatFileSize.test.js
+npm run build --prefix frontend
+npm run lint --prefix frontend
 ```
 
 ## Contributing
