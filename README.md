@@ -115,6 +115,22 @@ app, open the **Audit Log** panel from the header.
 Run `alembic upgrade head` to create the new `audit_logs` table. Share creation
 and revocation events will be added together with the document sharing feature.
 
+## Folder and document permissions
+
+Each folder and document has one owner. Only the owner can list, download,
+delete, rename or upload into a folder, and every route applies the same check.
+
+| Level  | Who has it          | Allows                                                        |
+|--------|---------------------|---------------------------------------------------------------|
+| Owner  | The user who created the folder or uploaded the document | List, download, delete, rename, upload into the folder |
+| None   | Every other user    | Nothing. The API returns `404`, the same as for an ID that does not exist |
+
+A document can only be placed in a folder its owner controls. Changing a document
+or folder ID in a request does not grant access. `GET /documents/?folder_id=`
+returns only that folder's documents and returns `404` for a folder you do not
+own. Sharing levels such as read or write are not available yet and will be added
+with document sharing.
+
 ## Running tests
 
 From `backend`, with your virtual environment activated:
