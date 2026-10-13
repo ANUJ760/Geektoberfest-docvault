@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { test, expect } from "vitest";
 import { formatFileSize } from "./formatFileSize.js";
 
 test("formats byte counts with appropriate units and no trailing zeros", () => {
@@ -18,7 +17,7 @@ test("formats byte counts with appropriate units and no trailing zeros", () => {
     [10485760, "10 MB"],
     [1073741824, "1024 MB"],
   ]) {
-    assert.equal(formatFileSize(bytes), expected, `bytes: ${bytes}`);
+    expect(formatFileSize(bytes), `bytes: ${bytes}`).toBe(expected);
   }
 });
 
@@ -27,12 +26,12 @@ test("uses a consistent fallback for missing and invalid byte counts", () => {
     undefined, null, NaN, Infinity, -Infinity, -1, 0.5,
     Number.MAX_SAFE_INTEGER + 1, "", "1024", true, false, {}, [],
   ]) {
-    assert.equal(formatFileSize(bytes), "Unknown");
+    expect(formatFileSize(bytes)).toBe("Unknown");
   }
 });
 
 test("leaves the original document byte count unchanged", () => {
   const document = Object.freeze({ file_size: 1536 });
-  assert.equal(formatFileSize(document.file_size), "1.5 KB");
-  assert.deepEqual(document, { file_size: 1536 });
+  expect(formatFileSize(document.file_size)).toBe("1.5 KB");
+  expect(document).toEqual({ file_size: 1536 });
 });

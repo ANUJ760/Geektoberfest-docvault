@@ -45,4 +45,8 @@ export const createFolder = (name) => api.post('/folders/', { name });
 export const renameFolder = (id, name) => api.patch(`/folders/${id}`, { name });
 export const deleteFolder = (id) => api.delete(`/folders/${id}`);
 
+// Audit log endpoints
+export const getAuditLogs = (limit = 100, offset = 0) =>
+  api.get(`/audit/?limit=${limit}&offset=${offset}`);
+
 export default api;
