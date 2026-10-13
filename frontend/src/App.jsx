@@ -64,13 +64,7 @@ function App() {
   const [renamingFolder, setRenamingFolder] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
-  const [sortBy, setSortBy] = useState("date_desc");
-
-
-  // Audit log state
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [showAudit, setShowAudit] = useState(false);
-  const [auditLoading, setAuditLoading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState("");
 
   useEffect(() => {
     if (token) {
@@ -170,24 +164,40 @@ function App() {
   };
 
   const handleUpload = async (e) => {
-    e.preventDefault();
-    if (!uploadFile) return;
+  e.preventDefault();
+  setError("");
+  setUploadSuccess("");
 
-    const formData = new FormData();
-    formData.append("file", uploadFile);
-    if (selectedFolder) {
-      formData.append("folder_id", selectedFolder);
-    }
+  if (!uploadFile) {
+    setError("Please choose a file to upload first.");
+    return;
+  }
 
-    try {
-      await uploadDocument(formData);
-      setUploadFile(null);
-      fetchDocuments();
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.detail || "Upload failed");
-    }
-  };
+  const maxBytes = 10 * 1024 * 1024;
+  if (uploadFile.size > maxBytes) {
+    setError("File is too large. Maximum allowed size is 10MB.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", uploadFile);
+  if (selectedFolder) {
+    formData.append("folder_id", selectedFolder);
+  }
+
+  try {
+    await uploadDocument(formData);
+    setUploadFile(null);
+    e.target.reset(); // clear input
+    setUploadSuccess("Document uploaded successfully!");
+    setTimeout(() => setUploadSuccess(""), 4000);
+    fetchDocuments();
+  } catch (err) {
+    console.error(err);
+    const message = err.response?.data?.detail || "Upload failed. Please check the file format and try again.";
+    setError(message);
+  }
+};
 
   const handleDeleteDoc = async (id) => {
     if (!window.confirm("Are you sure you want to delete this document?")) {
@@ -529,6 +539,15 @@ function App() {
             <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm flex justify-between">
               <p>{error}</p>
               <button onClick={() => setError("")} className="font-bold">
+                &times;
+              </button>
+            </div>
+          )}
+
+          {uploadSuccess && (
+            <div className="bg-green-50 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm flex justify-between">
+              <p>{uploadSuccess}</p>
+              <button onClick={() => setUploadSuccess("")} className="font-bold">
                 &times;
               </button>
             </div>
