@@ -24,6 +24,7 @@ The frontend is deployed on Vercel, and the FastAPI backend is hosted on Render.
 - Download documents
 - Delete documents
 - Create and delete folders
+- Rename folders with validation that preserves your input on errors
 - Search documents by filename
 
 ## Tech Stack
@@ -82,6 +83,58 @@ npm install
 npm run dev
 ```
 The React application will be available at `http://localhost:5173`.
+
+## Folder names
+
+Folder creation and renaming trim leading and trailing whitespace and reject empty
+or whitespace-only names. Names must be unique for each user (case-sensitive).
+Folders are currently a flat list, so there is no parent-folder scope. Different
+users can use the same folder name.
+
+Use the pencil button beside a folder to rename it, then choose **Save** or
+**Cancel**. Validation errors appear beside the input without clearing your text.
+Renaming keeps the folder's documents and current selection unchanged.
+
+The API accepts `PATCH /folders/{folder_id}` with `{"name": "New name"}` and requires
+authentication as the folder owner. Invalid names return `422`, duplicate names
+return `400`, and missing folders or folders owned by another user return `404`.
+
+## Audit log
+
+Sensitive document actions are recorded so users can see what happened to their
+files. Document **upload**, **download** and **delete** each create an audit event
+containing the actor, action, target (type, id and file name), client IP and
+timestamp. Passwords, tokens and document contents are never stored. Failed
+requests (for example a download of a missing document) are not recorded.
+
+`GET /audit/` returns the authenticated user's own events, newest first, and
+supports `limit` (1-500, default 100) and `offset` query parameters. Users can
+only read their own events; unauthenticated requests return `401`. In the web
+app, open the **Audit Log** panel from the header.
+
+Run `alembic upgrade head` to create the new `audit_logs` table. Share creation
+and revocation events will be added together with the document sharing feature.
+
+## Running tests
+
+From `backend`, with your virtual environment activated:
+
+```bash
+pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+Backend tests use an isolated in-memory SQLite database and do not require a
+running PostgreSQL instance or modify your development database.
+
+From `frontend`:
+
+```bash
+npm install
+npm test
+npm run lint
+npm run build
+```
 
 ## Contributing
 
