@@ -51,6 +51,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +68,18 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Upload progress & cancellation state
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState("idle");
+  const uploadAbortControllerRef = useRef(null);
+  const currentUploadIdRef = useRef(0);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (token) {
@@ -161,45 +174,133 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
+        uploadAbortControllerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleLogout = () => {
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+    currentUploadIdRef.current += 1;
+    setUploadStatus("idle");
+    setUploadProgress(null);
+    setUploadFile(null);
     setToken(null);
   };
 
+  const isUploading = uploadStatus === "uploading" || uploadStatus === "processing";
+
   const handleUpload = async (e) => {
-  e.preventDefault();
-  setError("");
-  setUploadSuccess("");
+    e.preventDefault();
+    if (isUploading) return;
 
-  if (!uploadFile) {
-    setError("Please choose a file to upload first.");
-    return;
-  }
+    setError("");
+    setUploadSuccess("");
 
-  const maxBytes = 10 * 1024 * 1024;
-  if (uploadFile.size > maxBytes) {
-    setError("File is too large. Maximum allowed size is 10MB.");
-    return;
-  }
+    if (!uploadFile) {
+      setError("Please choose a file to upload first.");
+      return;
+    }
 
-  const formData = new FormData();
-  formData.append("file", uploadFile);
-  if (selectedFolder) {
-    formData.append("folder_id", selectedFolder);
-  }
+    const maxBytes = 10 * 1024 * 1024;
+    if (uploadFile.size > maxBytes) {
+      setError("File is too large. Maximum allowed size is 10MB.");
+      return;
+    }
 
-  try {
-    await uploadDocument(formData);
-    setUploadFile(null);
-    e.target.reset(); // clear input
-    setUploadSuccess("Document uploaded successfully!");
-    setTimeout(() => setUploadSuccess(""), 4000);
-    fetchDocuments();
-  } catch (err) {
-    console.error(err);
-    const message = err.response?.data?.detail || "Upload failed. Please check the file format and try again.";
-    setError(message);
-  }
-};
+    const controller = new AbortController();
+    uploadAbortControllerRef.current = controller;
+    const uploadId = ++currentUploadIdRef.current;
+
+    setUploadStatus("uploading");
+    setUploadProgress({ loaded: 0, total: uploadFile.size, percent: 0 });
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+    if (selectedFolder) {
+      formData.append("folder_id", selectedFolder);
+    }
+
+    try {
+      await uploadDocument(formData, {
+        signal: controller.signal,
+        onUploadProgress: (progressEvent) => {
+          if (currentUploadIdRef.current !== uploadId) return;
+          const loaded = progressEvent.loaded ?? 0;
+          const total =
+            progressEvent.total && progressEvent.total > 0
+              ? progressEvent.total
+              : (progressEvent.lengthComputable && progressEvent.total > 0 ? progressEvent.total : null);
+
+          if (total && total > 0) {
+            const rawPercent = Math.round((loaded * 100) / total);
+            const percent = Math.min(Math.max(rawPercent, 0), 100);
+            setUploadProgress({ loaded, total, percent });
+            if (percent >= 100) {
+              setUploadStatus("processing");
+            } else {
+              setUploadStatus("uploading");
+            }
+          } else {
+            setUploadProgress({ loaded, total: null, percent: null });
+            setUploadStatus("uploading");
+          }
+        },
+      });
+
+      if (currentUploadIdRef.current !== uploadId) return;
+
+      setUploadStatus("idle");
+      setUploadProgress(null);
+      uploadAbortControllerRef.current = null;
+      setUploadFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      setUploadSuccess("Document uploaded successfully!");
+      setTimeout(() => setUploadSuccess(""), 4000);
+      fetchDocuments();
+    } catch (err) {
+      if (currentUploadIdRef.current !== uploadId) return;
+
+      uploadAbortControllerRef.current = null;
+
+      if (
+        err.name === "CanceledError" ||
+        err.code === "ERR_CANCELED" ||
+        err.message === "canceled" ||
+        err.name === "AbortError"
+      ) {
+        setUploadStatus("cancelled");
+        setUploadProgress(null);
+        setError("Upload cancelled. Note: Cancellation does not guarantee server rollback. If uncertain, please refresh the document list.");
+        return;
+      }
+
+      setUploadStatus("idle");
+      setUploadProgress(null);
+      console.error(err);
+      const message = err.response?.data?.detail || "Upload failed. Please check the file format and try again.";
+      setError(message);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+    setUploadStatus("cancelled");
+    setUploadProgress(null);
+    setError("Upload cancelled. Note: Cancellation does not guarantee server rollback. If uncertain, please refresh the document list.");
+  };
 
   const handleDeleteDoc = async (id) => {
     if (!window.confirm("Are you sure you want to delete this document?")) {
@@ -555,25 +656,81 @@ function App() {
             </div>
           )}
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border mb-6 flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold">Upload Document</h2>
-              <p className="text-sm text-gray-500">Max size: 10MB</p>
+          <div className="bg-white p-6 rounded-xl shadow-sm border mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Upload Document</h2>
+                <p className="text-sm text-gray-500">Max size: 10MB</p>
+              </div>
+              <form onSubmit={handleUpload} className="flex items-center gap-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  aria-label="Choose file to upload"
+                  disabled={isUploading}
+                  className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 disabled:opacity-50"
+                  onChange={(e) => setUploadFile(e.target.files[0] || null)}
+                />
+                {isUploading ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelUpload}
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+                    aria-label="Cancel upload"
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!uploadFile || isUploading}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <FiUpload /> Upload
+                  </button>
+                )}
+              </form>
             </div>
-            <form onSubmit={handleUpload} className="flex items-center gap-4">
-              <input
-                type="file"
-                className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                onChange={(e) => setUploadFile(e.target.files[0])}
-              />
-              <button
-                type="submit"
-                disabled={!uploadFile}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <FiUpload /> Upload
-              </button>
-            </form>
+            {isUploading && (
+              <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium text-gray-700" aria-live="polite">
+                    {uploadStatus === "processing"
+                      ? "Transfer complete. Waiting for server confirmation..."
+                      : uploadProgress?.percent !== null && uploadProgress?.percent !== undefined
+                      ? `Uploading... ${uploadProgress.percent}% (${formatFileSize(uploadProgress.loaded)} / ${formatFileSize(uploadProgress.total)})`
+                      : `Uploading... ${formatFileSize(uploadProgress?.loaded || 0)} sent`}
+                  </span>
+                  {uploadProgress?.percent !== null && uploadProgress?.percent !== undefined && (
+                    <span className="text-gray-500 font-medium">{uploadProgress.percent}%</span>
+                  )}
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuenow={
+                    uploadProgress?.percent !== null && uploadProgress?.percent !== undefined
+                      ? uploadProgress.percent
+                      : undefined
+                  }
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Upload progress"
+                  className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"
+                >
+                  <div
+                    className={`h-2.5 rounded-full transition-all duration-200 ${
+                      uploadStatus === "processing" ? "bg-amber-500 animate-pulse" : "bg-indigo-600"
+                    }`}
+                    style={{
+                      width:
+                        uploadProgress?.percent !== null && uploadProgress?.percent !== undefined
+                          ? `${uploadProgress.percent}%`
+                          : "100%",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">

@@ -239,3 +239,161 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("document upload progress and cancellation", () => {
+  it("shows upload progress and server confirmation before success", async () => {
+    let uploadProgressCallback;
+    let resolveUpload;
+    api.uploadDocument.mockImplementation((formData, config) => {
+      uploadProgressCallback = config?.onUploadProgress;
+      return new Promise((resolve) => {
+        resolveUpload = resolve;
+      });
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "report.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Choose file to upload");
+
+    await user.upload(fileInput, file);
+    const uploadBtn = screen.getByRole("button", { name: /upload/i });
+    expect(uploadBtn.disabled).toBe(false);
+
+    await user.click(uploadBtn);
+
+    expect(api.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Cancel upload" })).toBeTruthy();
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+
+    // Trigger progress at 50%
+    act(() => {
+      uploadProgressCallback?.({ loaded: 500, total: 1000, lengthComputable: true });
+    });
+
+    const progressBar = screen.getByRole("progressbar");
+    expect(progressBar.getAttribute("aria-valuenow")).toBe("50");
+    expect(screen.getByText(/Uploading\.\.\. 50%/i)).toBeTruthy();
+
+    // Trigger progress at 100% -> should show waiting for server confirmation
+    act(() => {
+      uploadProgressCallback?.({ loaded: 1000, total: 1000, lengthComputable: true });
+    });
+
+    expect(screen.getByText(/Waiting for server confirmation/i)).toBeTruthy();
+
+    // Server completes successfully
+    await act(async () => {
+      resolveUpload({ data: { id: 99, original_filename: "report.pdf" } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Document uploaded successfully!")).toBeTruthy();
+    });
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel upload" })).toBeNull();
+  });
+
+  it("handles unknown total by displaying sent bytes without inventing percentage", async () => {
+    let uploadProgressCallback;
+    let resolveUpload;
+    api.uploadDocument.mockImplementation((formData, config) => {
+      uploadProgressCallback = config?.onUploadProgress;
+      return new Promise((resolve) => {
+        resolveUpload = resolve;
+      });
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "unknown.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Choose file to upload");
+
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    act(() => {
+      uploadProgressCallback?.({ loaded: 2048, total: null, lengthComputable: false });
+    });
+
+    expect(screen.getByText(/2 KB sent/i)).toBeTruthy();
+    const progressBar = screen.getByRole("progressbar");
+    expect(progressBar.getAttribute("aria-valuenow")).toBeNull();
+
+    await act(async () => {
+      resolveUpload({ data: { id: 100, original_filename: "unknown.pdf" } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Document uploaded successfully!")).toBeTruthy();
+    });
+  });
+
+  it("cancels active upload when Cancel is clicked", async () => {
+    let passedSignal;
+    api.uploadDocument.mockImplementation((formData, config) => {
+      passedSignal = config?.signal;
+      return new Promise((_, reject) => {
+        passedSignal?.addEventListener("abort", () => {
+          const cancelError = new Error("canceled");
+          cancelError.name = "CanceledError";
+          reject(cancelError);
+        });
+      });
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "cancel-me.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Choose file to upload");
+
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    const cancelBtn = screen.getByRole("button", { name: "Cancel upload" });
+    expect(cancelBtn).toBeTruthy();
+
+    await user.click(cancelBtn);
+
+    expect(passedSignal.aborted).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Upload cancelled. Note: Cancellation does not guarantee server rollback/i)
+      ).toBeTruthy();
+    });
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("rejects files exceeding the 10MB limit without sending a request", async () => {
+    const user = await openApp();
+    const oversizedFile = new File(["x"], "huge.pdf", { type: "application/pdf" });
+    Object.defineProperty(oversizedFile, "size", { value: 11 * 1024 * 1024 });
+
+    const fileInput = screen.getByLabelText("Choose file to upload");
+    await user.upload(fileInput, oversizedFile);
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect(api.uploadDocument).not.toHaveBeenCalled();
+    expect(screen.getByText(/File is too large. Maximum allowed size is 10MB/i)).toBeTruthy();
+  });
+
+  it("aborts active upload on logout", async () => {
+    let passedSignal;
+    api.uploadDocument.mockImplementation((formData, config) => {
+      passedSignal = config?.signal;
+      return new Promise(() => {});
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "logout-abort.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Choose file to upload");
+
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect(passedSignal.aborted).toBe(false);
+
+    const logoutBtn = screen.getByRole("button", { name: /logout/i });
+    await user.click(logoutBtn);
+
+    expect(passedSignal.aborted).toBe(true);
+  });
+});
+

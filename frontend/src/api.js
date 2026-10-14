@@ -31,11 +31,13 @@ export const getMe = () => api.get('/auth/me');
 
 // Document endpoints
 export const getDocuments = (q = '') => api.get(`/documents/?q=${q}`);
-export const uploadDocument = (formData) => api.post('/documents/upload', formData, {
-  headers: {
-    'Content-Type': 'multipart/form-data'
-  }
-});
+export const uploadDocument = (formData, config = {}) =>
+  api.post('/documents/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    ...config,
+  });
 export const deleteDocument = (id) => api.delete(`/documents/${id}`);
 export const searchDocuments = (q) => api.get(`/documents/search?q=${q}`);
 

@@ -42,35 +42,44 @@ def upload_document(
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    new_doc = models.Document(
-        filename=unique_filename,
-        original_filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        content_type=file.content_type,
-        folder_id=folder_id,
-        owner_id=current_user.id
-    )
+        new_doc = models.Document(
+            filename=unique_filename,
+            original_filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            content_type=file.content_type,
+            folder_id=folder_id,
+            owner_id=current_user.id
+        )
 
-    db.add(new_doc)
-    db.flush()  # assign new_doc.id before logging
+        db.add(new_doc)
+        db.flush()  # assign new_doc.id before logging
 
-    log_event(
-        db,
-        user_id=current_user.id,
-        action="upload",
-        target_type="document",
-        target_id=new_doc.id,
-        target_name=file.filename,
-        ip_address=request.client.host if request.client else None,
-    )
+        log_event(
+            db,
+            user_id=current_user.id,
+            action="upload",
+            target_type="document",
+            target_id=new_doc.id,
+            target_name=file.filename,
+            ip_address=request.client.host if request.client else None,
+        )
 
-    db.commit()
-    db.refresh(new_doc)
-    return new_doc
+        db.commit()
+        db.refresh(new_doc)
+        return new_doc
+    except Exception:
+        db.rollback()
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise
 
 # fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])
