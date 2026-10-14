@@ -38,6 +38,7 @@ export const uploadDocument = (formData) => api.post('/documents/upload', formDa
 });
 export const deleteDocument = (id) => api.delete(`/documents/${id}`);
 export const searchDocuments = (q) => api.get(`/documents/search?q=${q}`);
+export const getStorageUsage = () => api.get('/documents/storage-usage');
 
 // Folder endpoints
 export const getFolders = () => api.get('/folders/');

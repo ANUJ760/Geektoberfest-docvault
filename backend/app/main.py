@@ -2,7 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .routes import documents, folders, auth_routes, audit
+from .quota import validate_quota_configuration
 import os
+
+# Validate storage quota configuration on startup
+validate_quota_configuration()
 
 # Tables will be created using Alembic migrations
 

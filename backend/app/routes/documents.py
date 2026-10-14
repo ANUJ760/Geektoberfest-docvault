@@ -9,11 +9,28 @@ from .. import models, schemas, auth
 from ..database import get_db
 from ..audit_logger import log_event
 from ..access import get_owned_document, get_owned_folder
+from ..quota import check_and_reserve_quota, get_configured_quota_bytes, get_user_storage_usage
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
 
 MAX_FILE_SIZE = 10 * 1024 * 1024 # 10 MB
+
+@router.get("/storage-usage", response_model=schemas.StorageUsageResponse)
+def get_storage_usage(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    quota_bytes = get_configured_quota_bytes()
+    used_bytes = get_user_storage_usage(db, current_user.id)
+    remaining_bytes = max(quota_bytes - used_bytes, 0)
+    used_percentage = round((used_bytes / quota_bytes) * 100, 2) if quota_bytes > 0 else 0.0
+    return {
+        "used_bytes": used_bytes,
+        "quota_bytes": quota_bytes,
+        "remaining_bytes": remaining_bytes,
+        "used_percentage": min(used_percentage, 100.0),
+    }
 
 @router.post("/upload", response_model=schemas.DocumentResponse)
 def upload_document(
@@ -37,40 +54,52 @@ def upload_document(
         if not folder:
             raise HTTPException(status_code=404, detail="Folder not found or you don't have access")
 
+    # Verify per-user storage quota atomically
+    check_and_reserve_quota(db, current_user.id, file_size)
+
     # Generate unique filename to avoid conflicts
     file_ext = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    new_doc = models.Document(
-        filename=unique_filename,
-        original_filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        content_type=file.content_type,
-        folder_id=folder_id,
-        owner_id=current_user.id
-    )
+        new_doc = models.Document(
+            filename=unique_filename,
+            original_filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            content_type=file.content_type,
+            folder_id=folder_id,
+            owner_id=current_user.id
+        )
 
-    db.add(new_doc)
-    db.flush()  # assign new_doc.id before logging
+        db.add(new_doc)
+        db.flush()  # assign new_doc.id before logging
 
-    log_event(
-        db,
-        user_id=current_user.id,
-        action="upload",
-        target_type="document",
-        target_id=new_doc.id,
-        target_name=file.filename,
-        ip_address=request.client.host if request.client else None,
-    )
+        log_event(
+            db,
+            user_id=current_user.id,
+            action="upload",
+            target_type="document",
+            target_id=new_doc.id,
+            target_name=file.filename,
+            ip_address=request.client.host if request.client else None,
+        )
 
-    db.commit()
-    db.refresh(new_doc)
-    return new_doc
+        db.commit()
+        db.refresh(new_doc)
+        return new_doc
+    except Exception:
+        db.rollback()
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise
 
 # fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])

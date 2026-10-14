@@ -13,6 +13,7 @@ import api, {
   register,
   getMe,
   getAuditLogs,
+  getStorageUsage,
 } from "./api";
 import {
   FiDownload,
@@ -51,6 +52,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,6 +70,14 @@ function App() {
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
 
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Storage quota usage state
+  const [storageUsage, setStorageUsage] = useState(null);
+
   useEffect(() => {
     if (token) {
       localStorage.setItem("token", token);
@@ -75,8 +85,19 @@ function App() {
     } else {
       localStorage.removeItem("token");
       setUser(null);
+      setStorageUsage(null);
     }
   }, [token]);
+
+  const fetchStorageUsage = async () => {
+    if (!token) return;
+    try {
+      const res = await getStorageUsage();
+      setStorageUsage(res.data);
+    } catch (err) {
+      console.error("Failed to fetch storage usage:", err);
+    }
+  };
 
   const fetchMe = async () => {
     try {
@@ -84,6 +105,7 @@ function App() {
       setUser(res.data);
       fetchDocuments();
       fetchFolders();
+      fetchStorageUsage();
     } catch (err) {
       console.error(err);
       setToken(null); // Invalid token
@@ -163,43 +185,45 @@ function App() {
 
   const handleLogout = () => {
     setToken(null);
+    setStorageUsage(null);
   };
 
   const handleUpload = async (e) => {
-  e.preventDefault();
-  setError("");
-  setUploadSuccess("");
+    e.preventDefault();
+    setError("");
+    setUploadSuccess("");
 
-  if (!uploadFile) {
-    setError("Please choose a file to upload first.");
-    return;
-  }
+    if (!uploadFile) {
+      setError("Please choose a file to upload first.");
+      return;
+    }
 
-  const maxBytes = 10 * 1024 * 1024;
-  if (uploadFile.size > maxBytes) {
-    setError("File is too large. Maximum allowed size is 10MB.");
-    return;
-  }
+    const maxBytes = 10 * 1024 * 1024;
+    if (uploadFile.size > maxBytes) {
+      setError("File is too large. Maximum allowed size is 10MB.");
+      return;
+    }
 
-  const formData = new FormData();
-  formData.append("file", uploadFile);
-  if (selectedFolder) {
-    formData.append("folder_id", selectedFolder);
-  }
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+    if (selectedFolder) {
+      formData.append("folder_id", selectedFolder);
+    }
 
-  try {
-    await uploadDocument(formData);
-    setUploadFile(null);
-    e.target.reset(); // clear input
-    setUploadSuccess("Document uploaded successfully!");
-    setTimeout(() => setUploadSuccess(""), 4000);
-    fetchDocuments();
-  } catch (err) {
-    console.error(err);
-    const message = err.response?.data?.detail || "Upload failed. Please check the file format and try again.";
-    setError(message);
-  }
-};
+    try {
+      await uploadDocument(formData);
+      setUploadFile(null);
+      e.target.reset(); // clear input
+      setUploadSuccess("Document uploaded successfully!");
+      setTimeout(() => setUploadSuccess(""), 4000);
+      fetchDocuments();
+      fetchStorageUsage();
+    } catch (err) {
+      console.error(err);
+      const message = err.response?.data?.detail || "Upload failed. Please check the file format and try again.";
+      setError(message);
+    }
+  };
 
   const handleDeleteDoc = async (id) => {
     if (!window.confirm("Are you sure you want to delete this document?")) {
@@ -208,6 +232,7 @@ function App() {
     try {
       await deleteDocument(id);
       fetchDocuments();
+      fetchStorageUsage();
     } catch (err) {
       console.error(err);
       setError("Failed to delete document");
@@ -261,6 +286,7 @@ function App() {
       if (selectedFolder === id) setSelectedFolder(null);
       fetchFolders();
       fetchDocuments();
+      fetchStorageUsage();
     } catch (err) {
       console.error(err);
       setError("Failed to delete folder");
@@ -413,6 +439,41 @@ function App() {
       <main className="max-w-7xl mx-auto px-8 py-8 flex gap-8">
         {/* Sidebar */}
         <aside className="w-64 flex-shrink-0">
+          {storageUsage && (
+            <div className="bg-white p-4 rounded-xl shadow-sm border mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Storage
+                </span>
+                <span className="text-xs text-gray-500 font-medium">
+                  {storageUsage.used_percentage}%
+                </span>
+              </div>
+              <div
+                role="progressbar"
+                aria-valuenow={Math.round(storageUsage.used_percentage)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Storage quota usage"
+                className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden"
+              >
+                <div
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    storageUsage.used_percentage >= 90
+                      ? "bg-red-500"
+                      : storageUsage.used_percentage >= 75
+                      ? "bg-amber-500"
+                      : "bg-indigo-600"
+                  }`}
+                  style={{ width: `${Math.min(storageUsage.used_percentage, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                {formatFileSize(storageUsage.used_bytes)} of {formatFileSize(storageUsage.quota_bytes)} used
+              </p>
+            </div>
+          )}
+
           <div className="bg-white p-4 rounded-xl shadow-sm border mb-6">
             <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <FiFolder /> Folders
@@ -563,6 +624,7 @@ function App() {
             <form onSubmit={handleUpload} className="flex items-center gap-4">
               <input
                 type="file"
+                aria-label="Choose file to upload"
                 className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                 onChange={(e) => setUploadFile(e.target.files[0])}
               />
@@ -681,6 +743,7 @@ function App() {
                             onClick={() => handleDeleteDoc(doc.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Delete"
+                            aria-label={`Delete ${doc.original_filename}`}
                           >
                             <FiTrash2 />
                           </button>

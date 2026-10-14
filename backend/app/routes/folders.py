@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+import os
 from ..access import get_owned_folder
 from .. import models, schemas, auth
 from ..database import get_db
@@ -52,6 +53,14 @@ def delete_folder(folder_id: int, db: Session = Depends(get_db), current_user: m
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     
+    # Clean up physical files for all documents in this folder
+    for doc in folder.documents:
+        if doc.file_path and os.path.exists(doc.file_path):
+            try:
+                os.remove(doc.file_path)
+            except OSError:
+                pass
+
     db.delete(folder)
     db.commit()
     return None

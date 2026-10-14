@@ -11,6 +11,7 @@ vi.mock("./api", () => ({
   createFolder: vi.fn(), renameFolder: vi.fn(), deleteFolder: vi.fn(),
   uploadDocument: vi.fn(), deleteDocument: vi.fn(), searchDocuments: vi.fn(),
   login: vi.fn(), register: vi.fn(),
+  getStorageUsage: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -20,6 +21,14 @@ beforeEach(() => {
   api.default.get.mockResolvedValue({ data: [] });
   api.searchDocuments.mockResolvedValue({ data: [] });
   api.getFolders.mockResolvedValue({ data: [{ id: 1, name: "Reports" }] });
+  api.getStorageUsage.mockResolvedValue({
+    data: {
+      used_bytes: 10485760,
+      quota_bytes: 104857600,
+      remaining_bytes: 94371840,
+      used_percentage: 10.0,
+    },
+  });
 });
 
 afterEach(() => {
@@ -239,3 +248,59 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("storage quota display and error handling", () => {
+  it("displays storage quota usage and progress", async () => {
+    await openApp();
+    expect(screen.getByText("Storage")).toBeTruthy();
+    expect(screen.getByText("10%")).toBeTruthy();
+    expect(screen.getByText(/10 MB of 100 MB used/i)).toBeTruthy();
+
+    const progressBar = screen.getByRole("progressbar", { name: "Storage quota usage" });
+    expect(progressBar.getAttribute("aria-valuenow")).toBe("10");
+  });
+
+  it("shows actionable error message when upload is rejected due to quota limit", async () => {
+    api.uploadDocument.mockRejectedValue({
+      response: {
+        status: 413,
+        data: {
+          detail: "Storage quota exceeded. Allowed quota: 100 MB (104857600 bytes), currently used: 98 MB",
+        },
+      },
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "big.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Choose file to upload");
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect(await screen.findByText(/Storage quota exceeded/i)).toBeTruthy();
+  });
+
+  it("refreshes storage usage after document deletion", async () => {
+    const doc = {
+      id: 55,
+      filename: "test.pdf",
+      original_filename: "test.pdf",
+      file_size: 1024,
+      content_type: "application/pdf",
+      folder_id: null,
+      created_at: new Date().toISOString(),
+    };
+    api.default.get.mockResolvedValue({ data: [doc] });
+    api.deleteDocument.mockResolvedValue({});
+    window.confirm = vi.fn().mockReturnValue(true);
+
+    const user = await openApp();
+    expect(await screen.findByText("test.pdf")).toBeTruthy();
+
+    const deleteBtn = screen.getByRole("button", { name: "Delete test.pdf" });
+    await user.click(deleteBtn);
+
+    expect(api.deleteDocument).toHaveBeenCalledWith(55);
+    expect(api.getStorageUsage).toHaveBeenCalledTimes(2); // Initial fetch + after deletion
+  });
+});
+

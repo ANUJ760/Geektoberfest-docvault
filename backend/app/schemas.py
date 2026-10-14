@@ -80,3 +80,14 @@ class AuditLogResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Storage Quota Schemas
+class StorageUsageResponse(BaseModel):
+    used_bytes: int
+    quota_bytes: int
+    remaining_bytes: int
+    used_percentage: float
+
+    model_config = ConfigDict(from_attributes=True)
+
