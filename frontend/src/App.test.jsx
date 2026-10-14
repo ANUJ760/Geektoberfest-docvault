@@ -239,3 +239,54 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("duplicate document upload detection", () => {
+  it("shows nonblocking advisory warning when uploaded document is a duplicate", async () => {
+    api.uploadDocument.mockResolvedValue({
+      data: {
+        id: 50,
+        filename: "copy.pdf",
+        original_filename: "copy.pdf",
+        is_duplicate: true,
+        duplicate_of: "original.pdf",
+      },
+    });
+
+    const user = await openApp();
+    const file = new File(["dummy content"], "copy.pdf", { type: "application/pdf" });
+    const fileInput = document.querySelector('input[type="file"]');
+    await user.upload(fileInput, file);
+
+    const uploadBtn = screen.getByRole("button", { name: /Upload/i });
+    await user.click(uploadBtn);
+
+    const alert = await screen.findByRole("status");
+    expect(alert.textContent).toContain("Document uploaded successfully!");
+    expect(alert.textContent).toContain('Note: An identical document "original.pdf" already exists in your vault.');
+  });
+
+  it("shows standard success message when uploaded document is not a duplicate", async () => {
+    api.uploadDocument.mockResolvedValue({
+      data: {
+        id: 51,
+        filename: "unique.pdf",
+        original_filename: "unique.pdf",
+        is_duplicate: false,
+        duplicate_of: null,
+      },
+    });
+
+    const user = await openApp();
+    const file = new File(["unique content"], "unique.pdf", { type: "application/pdf" });
+    const fileInput = document.querySelector('input[type="file"]');
+    await user.upload(fileInput, file);
+
+    const uploadBtn = screen.getByRole("button", { name: /Upload/i });
+    await user.click(uploadBtn);
+
+    const alert = await screen.findByRole("status");
+    expect(alert.textContent).toContain("Document uploaded successfully!");
+    expect(alert.textContent).not.toContain("identical document");
+  });
+});
+

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 import uuid
 import shutil
+import hashlib
 from .. import models, schemas, auth
 from ..database import get_db
 from ..audit_logger import log_event
@@ -18,6 +19,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024 # 10 MB
 @router.post("/upload", response_model=schemas.DocumentResponse)
 def upload_document(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     folder_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
@@ -42,35 +44,67 @@ def upload_document(
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    hasher = hashlib.sha256()
+    try:
+        with open(file_path, "wb") as buffer:
+            while chunk := file.file.read(65536):
+                hasher.update(chunk)
+                buffer.write(chunk)
+        content_sha256 = hasher.hexdigest()
 
-    new_doc = models.Document(
-        filename=unique_filename,
-        original_filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        content_type=file.content_type,
-        folder_id=folder_id,
-        owner_id=current_user.id
-    )
+        # Check for duplicate document owned by current user
+        duplicate_doc = db.query(models.Document).filter(
+            models.Document.owner_id == current_user.id,
+            models.Document.content_sha256 == content_sha256
+        ).first()
 
-    db.add(new_doc)
-    db.flush()  # assign new_doc.id before logging
+        is_duplicate = duplicate_doc is not None
+        duplicate_of = duplicate_doc.original_filename if duplicate_doc else None
 
-    log_event(
-        db,
-        user_id=current_user.id,
-        action="upload",
-        target_type="document",
-        target_id=new_doc.id,
-        target_name=file.filename,
-        ip_address=request.client.host if request.client else None,
-    )
+        new_doc = models.Document(
+            filename=unique_filename,
+            original_filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            content_type=file.content_type,
+            folder_id=folder_id,
+            owner_id=current_user.id,
+            content_sha256=content_sha256
+        )
 
-    db.commit()
-    db.refresh(new_doc)
-    return new_doc
+        db.add(new_doc)
+        db.flush()  # assign new_doc.id before logging
+
+        log_event(
+            db,
+            user_id=current_user.id,
+            action="upload",
+            target_type="document",
+            target_id=new_doc.id,
+            target_name=file.filename,
+            ip_address=request.client.host if request.client else None,
+        )
+
+        db.commit()
+        db.refresh(new_doc)
+
+        setattr(new_doc, "is_duplicate", is_duplicate)
+        setattr(new_doc, "duplicate_of", duplicate_of)
+
+        if is_duplicate:
+            response.headers["X-Document-Duplicate"] = "true"
+            if duplicate_of:
+                response.headers["X-Duplicate-Of"] = duplicate_of
+
+        return new_doc
+    except Exception:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        db.rollback()
+        raise
 
 # fixed : 
 @router.get("/", response_model=List[schemas.DocumentResponse])

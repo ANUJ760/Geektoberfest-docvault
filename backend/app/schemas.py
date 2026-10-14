@@ -40,6 +40,8 @@ class DocumentResponse(DocumentBase):
     created_at: datetime
     file_path: str
     owner_id: int
+    is_duplicate: Optional[bool] = False
+    duplicate_of: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

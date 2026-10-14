@@ -51,6 +51,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +68,11 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -188,11 +194,19 @@ function App() {
   }
 
   try {
-    await uploadDocument(formData);
+    const res = await uploadDocument(formData);
     setUploadFile(null);
-    e.target.reset(); // clear input
-    setUploadSuccess("Document uploaded successfully!");
-    setTimeout(() => setUploadSuccess(""), 4000);
+    if (typeof e.target?.reset === "function") {
+      e.target.reset();
+    }
+    if (res.data?.is_duplicate && res.data?.duplicate_of) {
+      setUploadSuccess(
+        `Document uploaded successfully! (Note: An identical document "${res.data.duplicate_of}" already exists in your vault.)`
+      );
+    } else {
+      setUploadSuccess("Document uploaded successfully!");
+    }
+    setTimeout(() => setUploadSuccess(""), 5000);
     fetchDocuments();
   } catch (err) {
     console.error(err);
@@ -547,7 +561,10 @@ function App() {
           )}
 
           {uploadSuccess && (
-            <div className="bg-green-50 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm flex justify-between">
+            <div
+              role="status"
+              className="bg-green-50 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm flex justify-between"
+            >
               <p>{uploadSuccess}</p>
               <button onClick={() => setUploadSuccess("")} className="font-bold">
                 &times;

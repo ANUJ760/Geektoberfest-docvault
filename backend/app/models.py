@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -38,7 +38,12 @@ class Document(Base):
     content_type = Column(String)
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
+    content_sha256 = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_documents_owner_id_content_sha256", "owner_id", "content_sha256"),
+    )
 
     folder = relationship("Folder", back_populates="documents")
     owner = relationship("User", back_populates="documents")
