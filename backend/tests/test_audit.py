@@ -96,7 +96,7 @@ class AuditTestBase(unittest.TestCase):
             filename=filename,
             original_filename=filename,
             file_path=os.path.join(self.upload_dir.name, filename),
-            file_size=1024,
+            file_size=0,
             content_type="application/pdf",
             owner_id=owner.id,
         )

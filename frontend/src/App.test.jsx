@@ -239,3 +239,53 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("document download integrity and error handling", () => {
+  it("downloads file and creates object URL on success", async () => {
+    const doc = { id: 40, filename: "sample.pdf", original_filename: "sample.pdf", file_size: 100, content_type: "application/pdf", folder_id: 1, created_at: "2026-01-01" };
+    api.default.get.mockImplementation((url) => {
+      if (url.includes("/documents/40/download")) {
+        return Promise.resolve({ data: new Blob(["sample content"]) });
+      }
+      return Promise.resolve({ data: [doc] });
+    });
+
+    const createObjectURL = vi.fn().mockReturnValue("blob:mock-url");
+    const revokeObjectURL = vi.fn();
+    window.URL.createObjectURL = createObjectURL;
+    window.URL.revokeObjectURL = revokeObjectURL;
+
+    const user = await openApp();
+    const downloadBtn = await screen.findByRole("button", { name: "Download sample.pdf" });
+    await user.click(downloadBtn);
+
+    expect(api.default.get).toHaveBeenCalledWith("/documents/40/download", { responseType: "blob" });
+    expect(createObjectURL).toHaveBeenCalled();
+  });
+
+  it("displays accessible error when download integrity check fails without creating file", async () => {
+    const doc = { id: 41, filename: "corrupted.pdf", original_filename: "corrupted.pdf", file_size: 100, content_type: "application/pdf", folder_id: 1, created_at: "2026-01-01" };
+    api.default.get.mockImplementation((url) => {
+      if (url.includes("/documents/41/download")) {
+        return Promise.reject({
+          response: {
+            data: { detail: "File integrity check failed: size mismatch" },
+          },
+        });
+      }
+      return Promise.resolve({ data: [doc] });
+    });
+
+    const createObjectURL = vi.fn();
+    window.URL.createObjectURL = createObjectURL;
+
+    const user = await openApp();
+    const downloadBtn = await screen.findByRole("button", { name: "Download corrupted.pdf" });
+    await user.click(downloadBtn);
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    const alert = await screen.findByText(/Download error: File integrity check failed: size mismatch/i);
+    expect(alert).toBeTruthy();
+  });
+});
+

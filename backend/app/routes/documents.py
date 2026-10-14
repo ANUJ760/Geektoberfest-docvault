@@ -120,10 +120,64 @@ def download_document(request: Request, doc_id: int, db: Session = Depends(get_d
     doc = get_owned_document(db, doc_id, current_user)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    if not os.path.exists(doc.file_path):
+
+    # Resolve and validate stored path beneath upload root
+    upload_root = os.path.realpath(UPLOAD_DIR)
+    resolved_path = os.path.realpath(doc.file_path)
+    try:
+        common = os.path.commonpath([upload_root, resolved_path])
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unsafe file path detected"
+        )
+
+    if common != upload_root or resolved_path == upload_root:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unsafe file path detected"
+        )
+
+    if not os.path.exists(resolved_path):
         raise HTTPException(status_code=404, detail="File not found on server")
 
+    if not os.path.isfile(resolved_path):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Requested document is not a regular file"
+        )
+
+    # Readability, size consistency, and checksum verification
+    try:
+        with open(resolved_path, "rb") as f:
+            actual_size = os.path.getsize(resolved_path)
+            if doc.file_size is not None and doc.file_size >= 0:
+                if actual_size != doc.file_size:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="File integrity check failed: size mismatch"
+                    )
+
+            trusted_sha256 = getattr(doc, "content_sha256", None)
+            if trusted_sha256:
+                import hashlib
+                hasher = hashlib.sha256()
+                while chunk := f.read(65536):
+                    hasher.update(chunk)
+                if hasher.hexdigest().lower() != trusted_sha256.lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="File integrity check failed: checksum mismatch"
+                    )
+    except HTTPException:
+        raise
+    except (PermissionError, OSError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Cannot read document file"
+        )
+
+    # Log audit event only after preflight integrity checks succeed
     log_event(
         db,
         user_id=current_user.id,
@@ -136,7 +190,7 @@ def download_document(request: Request, doc_id: int, db: Session = Depends(get_d
     db.commit()
 
     return FileResponse(
-        path=doc.file_path,
+        path=resolved_path,
         filename=doc.original_filename,
         media_type=doc.content_type
     )

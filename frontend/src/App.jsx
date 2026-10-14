@@ -51,6 +51,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +68,11 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -264,6 +270,41 @@ function App() {
     } catch (err) {
       console.error(err);
       setError("Failed to delete folder");
+    }
+  };
+
+  const handleDownload = async (doc) => {
+    setError("");
+    try {
+      const response = await api.get(`/documents/${doc.id}/download`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], {
+        type: doc.content_type || "application/octet-stream",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = doc.original_filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download failed:", err);
+      let message = "Failed to download document.";
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.detail) message = json.detail;
+        } catch {
+          // not JSON
+        }
+      } else if (err.response?.data?.detail) {
+        message = err.response.data.detail;
+      }
+      setError(`Download error: ${message}`);
     }
   };
 
@@ -668,15 +709,15 @@ function App() {
                       </td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <div className="flex justify-end gap-2">
-                          <a
-                            href={`${api.defaults.baseURL}/documents/${doc.id}/download?token=${token}`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(doc)}
                             className="p-2 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                             title="Download"
+                            aria-label={`Download ${doc.original_filename}`}
                           >
                             <FiDownload />
-                          </a>
+                          </button>
                           <button
                             onClick={() => handleDeleteDoc(doc.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
