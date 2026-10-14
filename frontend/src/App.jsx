@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { formatFileSize } from "./formatFileSize.js";
+import {
+  loadPresets,
+  savePreset,
+  deletePreset,
+  validatePresetForApply,
+} from "./filterPresets.js";
 import api, {
   getDocuments,
   getFolders,
@@ -27,6 +33,7 @@ import {
   FiLogOut,
   FiUser,
   FiShield,
+  FiBookmark,
 } from "react-icons/fi";
 
 function folderErrorMessage(err, fallback) {
@@ -51,6 +58,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,6 +76,17 @@ function App() {
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
 
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Filter presets state
+  const [presets, setPresets] = useState([]);
+  const [presetNameInput, setPresetNameInput] = useState("");
+  const [presetFeedback, setPresetFeedback] = useState(null);
+  const [showPresetsPanel, setShowPresetsPanel] = useState(false);
+
   useEffect(() => {
     if (token) {
       localStorage.setItem("token", token);
@@ -75,6 +94,10 @@ function App() {
     } else {
       localStorage.removeItem("token");
       setUser(null);
+      setPresets([]);
+      setPresetNameInput("");
+      setPresetFeedback(null);
+      setShowPresetsPanel(false);
     }
   }, [token]);
 
@@ -82,6 +105,8 @@ function App() {
     try {
       const res = await getMe();
       setUser(res.data);
+      const userId = res.data.id ?? res.data.username;
+      setPresets(loadPresets(userId));
       fetchDocuments();
       fetchFolders();
     } catch (err) {
@@ -163,6 +188,73 @@ function App() {
 
   const handleLogout = () => {
     setToken(null);
+    setUser(null);
+    setPresets([]);
+    setPresetNameInput("");
+    setPresetFeedback(null);
+    setShowPresetsPanel(false);
+  };
+
+  const handleSavePreset = (e) => {
+    e.preventDefault();
+    setPresetFeedback(null);
+    const userId = user?.id ?? user?.username;
+    if (!userId) {
+      setPresetFeedback({
+        type: "error",
+        message: "You must be authenticated to save presets.",
+      });
+      return;
+    }
+    try {
+      const updated = savePreset(
+        userId,
+        presetNameInput,
+        {
+          folderId: selectedFolder,
+          fileType: selectedFileType,
+          sortBy: sortBy,
+        },
+        folders
+      );
+      setPresets(updated);
+      setPresetNameInput("");
+      setPresetFeedback({
+        type: "success",
+        message: `Preset "${presetNameInput.trim()}" saved.`,
+      });
+    } catch (err) {
+      setPresetFeedback({ type: "error", message: err.message });
+    }
+  };
+
+  const handleApplyPreset = (preset) => {
+    setPresetFeedback(null);
+    const validation = validatePresetForApply(preset, folders);
+    if (!validation.valid) {
+      setPresetFeedback({ type: "error", message: validation.error });
+      return;
+    }
+    setSearchQuery("");
+    setSelectedFolder(preset.folderId);
+    setSelectedFileType(preset.fileType);
+    setSortBy(preset.sortBy);
+    setPresetFeedback({
+      type: "success",
+      message: `Preset "${preset.name}" applied.`,
+    });
+  };
+
+  const handleDeletePreset = (nameToDelete) => {
+    setPresetFeedback(null);
+    const userId = user?.id ?? user?.username;
+    if (!userId) return;
+    const updated = deletePreset(userId, nameToDelete);
+    setPresets(updated);
+    setPresetFeedback({
+      type: "success",
+      message: `Preset "${nameToDelete}" removed.`,
+    });
   };
 
   const handleUpload = async (e) => {
@@ -616,8 +708,113 @@ function App() {
                     <option value="name_desc">Name (Z-A)</option>
                   </select>
                 </div>
+
+                {/* Presets Control Button */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPresetsPanel((prev) => !prev)}
+                    className={`px-2.5 py-1 text-xs border rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                      showPresetsPanel
+                        ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                    }`}
+                    aria-expanded={showPresetsPanel}
+                    aria-controls="filterPresetsPanel"
+                  >
+                    <FiBookmark className="w-3.5 h-3.5" />
+                    Presets ({presets.length})
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* Presets Panel */}
+            {showPresetsPanel && (
+              <div id="filterPresetsPanel" className="p-4 border-b bg-gray-50/75 border-gray-200">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                      Filter Presets
+                    </span>
+                    {presetFeedback && (
+                      <div
+                        role={presetFeedback.type === "error" ? "alert" : "status"}
+                        className={`text-xs px-2.5 py-1 rounded-md font-medium ${
+                          presetFeedback.type === "error"
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : "bg-green-50 text-green-700 border border-green-200"
+                        }`}
+                      >
+                        {presetFeedback.message}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Save current preset */}
+                  <form onSubmit={handleSavePreset} className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="newPresetName" className="text-xs text-gray-600 font-medium sr-only">
+                      Preset name
+                    </label>
+                    <input
+                      id="newPresetName"
+                      type="text"
+                      placeholder="Preset name (e.g. Invoices PDF)"
+                      value={presetNameInput}
+                      onChange={(e) => setPresetNameInput(e.target.value)}
+                      maxLength={50}
+                      className="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-56"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                    >
+                      Save Preset
+                    </button>
+                    <span className="text-xs text-gray-500 italic">
+                      Saves current folder ({selectedFolder ? folders.find((f) => f.id === selectedFolder)?.name || "Selected" : "All"}), type ({selectedFileType}), and sort ({sortBy})
+                    </span>
+                  </form>
+
+                  {/* List of saved presets */}
+                  {presets.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {presets.map((preset) => (
+                        <div
+                          key={preset.name}
+                          className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-md px-2.5 py-1 text-xs shadow-sm"
+                        >
+                          <span className="font-medium text-gray-800">{preset.name}</span>
+                          <span className="text-[10px] text-gray-500">
+                            ({preset.folderId ? folders.find((f) => f.id === preset.folderId)?.name || "Folder" : "All"}, {preset.fileType}, {preset.sortBy})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyPreset(preset)}
+                            className="ml-1 text-indigo-600 hover:text-indigo-800 font-semibold"
+                            aria-label={`Apply preset ${preset.name}`}
+                          >
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePreset(preset.name)}
+                            className="text-gray-400 hover:text-red-600 font-bold ml-1"
+                            aria-label={`Remove preset ${preset.name}`}
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 italic">
+                      No saved presets yet. Configure the filters above and save a preset to quickly reapply them.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <table className="w-full text-left border-collapse">
               <thead>

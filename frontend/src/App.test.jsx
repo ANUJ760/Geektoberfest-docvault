@@ -239,3 +239,114 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("document filter presets", () => {
+  it("saves a valid filter preset and displays it in the presets list", async () => {
+    const user = await openApp();
+    const presetsBtn = screen.getByRole("button", { name: /Presets/i });
+    await user.click(presetsBtn);
+
+    // Set filter to PDF and sort to Name (A-Z)
+    await user.selectOptions(screen.getByRole("combobox", { name: "Type:" }), "pdf");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort:" }), "name_asc");
+
+    const input = screen.getByPlaceholderText(/Preset name/i);
+    await user.type(input, "Reports PDF");
+    await user.click(screen.getByRole("button", { name: "Save Preset" }));
+
+    expect((await screen.findByRole("status")).textContent).toContain('Preset "Reports PDF" saved');
+    expect(screen.getByText("Reports PDF")).toBeTruthy();
+    expect(input.value).toBe("");
+  });
+
+  it("rejects blank preset names with visible alert", async () => {
+    const user = await openApp();
+    await user.click(screen.getByRole("button", { name: /Presets/i }));
+
+    await user.click(screen.getByRole("button", { name: "Save Preset" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Preset name cannot be empty");
+  });
+
+  it("rejects duplicate preset names with visible alert", async () => {
+    const user = await openApp();
+    await user.click(screen.getByRole("button", { name: /Presets/i }));
+
+    const input = screen.getByPlaceholderText(/Preset name/i);
+    await user.type(input, "My Filter");
+    await user.click(screen.getByRole("button", { name: "Save Preset" }));
+    expect(await screen.findByText("My Filter")).toBeTruthy();
+
+    await user.type(input, "my filter");
+    await user.click(screen.getByRole("button", { name: "Save Preset" }));
+    expect((await screen.findByRole("alert")).textContent).toContain('A preset named "my filter" already exists');
+  });
+
+  it("applies a preset, restores controls, and visibly clears search query", async () => {
+    const report = { id: 10, filename: "report.pdf", original_filename: "report.pdf", file_size: 100, content_type: "application/pdf", folder_id: 1, created_at: "2026-01-01" };
+    api.default.get.mockResolvedValue({ data: [report] });
+    api.searchDocuments.mockResolvedValue({ data: [] });
+
+    // Pre-populate a preset in localStorage for user alice
+    localStorage.setItem(
+      "docvault_filter_presets_alice",
+      JSON.stringify([{ name: "Saved Report Preset", folderId: 1, fileType: "pdf", sortBy: "name_asc" }])
+    );
+
+    const user = await openApp();
+
+    // Type into search
+    const searchInput = screen.getByRole("textbox", { name: "Search documents" });
+    await user.type(searchInput, "query text");
+    expect(searchInput.value).toBe("query text");
+
+    // Open presets panel
+    await user.click(screen.getByRole("button", { name: /Presets/i }));
+    expect(screen.getByText("Saved Report Preset")).toBeTruthy();
+
+    // Apply the preset
+    await user.click(screen.getByRole("button", { name: "Apply preset Saved Report Preset" }));
+
+    // Search query must be visibly cleared
+    expect(searchInput.value).toBe("");
+    // Controls restored
+    expect(screen.getByRole("combobox", { name: "Type:" }).value).toBe("pdf");
+    expect(screen.getByRole("combobox", { name: "Sort:" }).value).toBe("name_asc");
+    expect(screen.getByRole("button", { name: "Reports", exact: true }).className).toContain("bg-indigo-50");
+    expect((await screen.findByRole("status")).textContent).toContain('Preset "Saved Report Preset" applied');
+  });
+
+  it("rejects applying a preset if saved folder no longer exists without broadening results", async () => {
+    localStorage.setItem(
+      "docvault_filter_presets_alice",
+      JSON.stringify([{ name: "Orphan Folder Preset", folderId: 999, fileType: "text", sortBy: "date_desc" }])
+    );
+
+    const user = await openApp();
+    await user.click(screen.getByRole("button", { name: /Presets/i }));
+
+    await user.click(screen.getByRole("button", { name: "Apply preset Orphan Folder Preset" }));
+
+    // Actionable error shown
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "The saved folder for this preset no longer exists or is inaccessible"
+    );
+    // Folder selection unchanged
+    expect(screen.getByRole("button", { name: "All Documents" }).className).toContain("bg-indigo-50");
+  });
+
+  it("deletes a preset from storage and UI", async () => {
+    localStorage.setItem(
+      "docvault_filter_presets_alice",
+      JSON.stringify([{ name: "To Delete", folderId: null, fileType: "all", sortBy: "date_desc" }])
+    );
+
+    const user = await openApp();
+    await user.click(screen.getByRole("button", { name: /Presets/i }));
+    expect(screen.getByText("To Delete")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Remove preset To Delete" }));
+    expect(screen.queryByText("To Delete")).toBeNull();
+    expect((await screen.findByRole("status")).textContent).toContain('Preset "To Delete" removed');
+  });
+});
+
