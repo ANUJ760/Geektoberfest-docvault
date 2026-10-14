@@ -38,6 +38,8 @@ export const uploadDocument = (formData) => api.post('/documents/upload', formDa
 });
 export const deleteDocument = (id) => api.delete(`/documents/${id}`);
 export const searchDocuments = (q) => api.get(`/documents/search?q=${q}`);
+export const getDocumentPreview = (id, config = {}) =>
+  api.get(`/documents/${id}/preview`, { responseType: 'blob', ...config });
 
 // Folder endpoints
 export const getFolders = () => api.get('/folders/');

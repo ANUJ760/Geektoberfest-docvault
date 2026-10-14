@@ -141,6 +141,109 @@ def download_document(request: Request, doc_id: int, db: Session = Depends(get_d
         media_type=doc.content_type
     )
 
+def detect_preview_content_type(file_path: str) -> str:
+    """
+    Inspect file bytes and header to determine safe preview eligibility.
+    Returns canonical content type if eligible.
+    Raises HTTPException(415) if type is unsupported or unsafe.
+    """
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    size = os.path.getsize(file_path)
+    if size > 10 * 1024 * 1024:
+        status_code = getattr(status, "HTTP_415_UNSUPPORTED_MEDIA_TYPE", 415)
+        raise HTTPException(
+            status_code=status_code,
+            detail="File is too large for inline preview. Please download to view.",
+        )
+
+    # Read leading bytes for signature check
+    with open(file_path, "rb") as f:
+        header = f.read(1024)
+
+    # PNG magic bytes
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    # JPEG magic bytes
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+
+    # PDF magic bytes
+    if header.startswith(b"%PDF-"):
+        return "application/pdf"
+
+    # Check for active HTML/SVG/XML tags to reject active content
+    lower_header = header.lower().strip()
+    active_signatures = [
+        b"<html", b"<!doctype html", b"<script", b"<svg", b"<?xml",
+        b"<iframe", b"<body", b"<head", b"<embed", b"<object"
+    ]
+    if any(sig in lower_header for sig in active_signatures):
+        status_code = getattr(status, "HTTP_415_UNSUPPORTED_MEDIA_TYPE", 415)
+        raise HTTPException(
+            status_code=status_code,
+            detail="Active content (HTML/SVG/XML) is not permitted for inline preview. Please download to view.",
+        )
+
+    # Check for text/plain: verify text decodes cleanly
+    try:
+        header.decode("utf-8")
+        # Ensure file content up to 1MB decodes cleanly
+        if size <= 1024 * 1024:
+            with open(file_path, "rb") as f:
+                f.read().decode("utf-8")
+        return "text/plain; charset=utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    status_code = getattr(status, "HTTP_415_UNSUPPORTED_MEDIA_TYPE", 415)
+    raise HTTPException(
+        status_code=status_code,
+        detail="File type is not supported for inline preview. Please download the document instead.",
+    )
+
+@router.get("/{doc_id}/preview")
+def preview_document(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    doc = get_owned_document(db, doc_id, current_user)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    canonical_type = detect_preview_content_type(doc.file_path)
+
+    log_event(
+        db,
+        user_id=current_user.id,
+        action="preview",
+        target_type="document",
+        target_id=doc.id,
+        target_name=doc.original_filename,
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{doc.original_filename}"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store, no-cache, must-revalidate",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    }
+
+    return FileResponse(
+        path=doc.file_path,
+        media_type=canonical_type,
+        headers=headers,
+    )
+
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(request: Request, doc_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     doc = get_owned_document(db, doc_id, current_user)

@@ -11,11 +11,14 @@ vi.mock("./api", () => ({
   createFolder: vi.fn(), renameFolder: vi.fn(), deleteFolder: vi.fn(),
   uploadDocument: vi.fn(), deleteDocument: vi.fn(), searchDocuments: vi.fn(),
   login: vi.fn(), register: vi.fn(),
+  getDocumentPreview: vi.fn(),
 }));
 
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.setItem("token", "test-token");
+  window.URL.createObjectURL = vi.fn().mockReturnValue("blob:http://localhost/test-blob");
+  window.URL.revokeObjectURL = vi.fn();
   api.getMe.mockResolvedValue({ data: { username: "alice" } });
   api.default.get.mockResolvedValue({ data: [] });
   api.searchDocuments.mockResolvedValue({ data: [] });
@@ -239,3 +242,110 @@ describe("document search clear", () => {
     expect(screen.getByText("current-list.pdf")).toBeTruthy();
   });
 });
+
+describe("document preview dialog", () => {
+  const sampleDoc = {
+    id: 42,
+    filename: "photo.png",
+    original_filename: "photo.png",
+    file_size: 2048,
+    content_type: "image/png",
+    folder_id: null,
+    created_at: new Date().toISOString(),
+  };
+
+  it("opens preview for an image document and closes it", async () => {
+    api.default.get.mockResolvedValue({ data: [sampleDoc] });
+    const blob = new Blob(["fake-image-bytes"], { type: "image/png" });
+    api.getDocumentPreview.mockResolvedValue({
+      headers: { "content-type": "image/png" },
+      data: blob,
+    });
+
+    const user = await openApp();
+    expect(await screen.findByText("photo.png")).toBeTruthy();
+
+    const previewBtn = screen.getByRole("button", { name: "Preview photo.png" });
+    await user.click(previewBtn);
+
+    expect(api.getDocumentPreview).toHaveBeenCalledWith(42, expect.any(Object));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeTruthy();
+    expect(screen.getByText("photo.png", { selector: "#preview-dialog-title" })).toBeTruthy();
+
+    const img = screen.getByRole("img", { name: "photo.png" });
+    expect(img.getAttribute("src")).toBe("blob:http://localhost/test-blob");
+
+    // Close preview
+    const closeBtn = screen.getByRole("button", { name: "Close preview" });
+    await user.click(closeBtn);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith("blob:http://localhost/test-blob");
+  });
+
+  it("renders plain text documents literally inside pre", async () => {
+    const textDoc = {
+      ...sampleDoc,
+      id: 43,
+      filename: "notes.txt",
+      original_filename: "notes.txt",
+      content_type: "text/plain",
+    };
+    api.default.get.mockResolvedValue({ data: [textDoc] });
+    const textBlob = {
+      text: vi.fn().mockResolvedValue("Safe plain text <script>alert('xss')</script>"),
+    };
+    api.getDocumentPreview.mockResolvedValue({
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      data: textBlob,
+    });
+
+    const user = await openApp();
+    await user.click(await screen.findByRole("button", { name: "Preview notes.txt" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(await screen.findByText(/Safe plain text <script>alert\('xss'\)<\/script>/i)).toBeTruthy();
+  });
+
+  it("handles unsupported file types (415) gracefully with download option", async () => {
+    const binDoc = {
+      ...sampleDoc,
+      id: 44,
+      filename: "archive.zip",
+      original_filename: "archive.zip",
+      content_type: "application/zip",
+    };
+    api.default.get.mockResolvedValue({ data: [binDoc] });
+    api.getDocumentPreview.mockRejectedValue({
+      response: { status: 415, data: { detail: "Unsupported" } },
+    });
+
+    const user = await openApp();
+    await user.click(await screen.findByRole("button", { name: "Preview archive.zip" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(
+      await screen.findByText(/This file type is not supported for inline preview/i)
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Download File/i })).toBeTruthy();
+  });
+
+  it("closes preview dialog when Escape key is pressed", async () => {
+    api.default.get.mockResolvedValue({ data: [sampleDoc] });
+    const blob = new Blob(["fake-image-bytes"], { type: "image/png" });
+    api.getDocumentPreview.mockResolvedValue({
+      headers: { "content-type": "image/png" },
+      data: blob,
+    });
+
+    const user = await openApp();
+    await user.click(await screen.findByRole("button", { name: "Preview photo.png" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+

@@ -13,6 +13,7 @@ import api, {
   register,
   getMe,
   getAuditLogs,
+  getDocumentPreview,
 } from "./api";
 import {
   FiDownload,
@@ -27,6 +28,7 @@ import {
   FiLogOut,
   FiUser,
   FiShield,
+  FiEye,
 } from "react-icons/fi";
 
 function folderErrorMessage(err, fallback) {
@@ -51,6 +53,7 @@ function App() {
 
   // App States
   const [selectedFileType, setSelectedFileType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +70,19 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Document preview state
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewData, setPreviewData] = useState(null);
+  const previewAbortRef = useRef(null);
+  const previewRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (token) {
@@ -161,9 +177,112 @@ function App() {
     }
   };
 
+  const handleClosePreview = () => {
+    if (previewAbortRef.current) {
+      previewAbortRef.current.abort();
+      previewAbortRef.current = null;
+    }
+    if (previewData?.url) {
+      URL.revokeObjectURL(previewData.url);
+    }
+    setPreviewDoc(null);
+    setPreviewData(null);
+    setPreviewError("");
+    setPreviewLoading(false);
+  };
+
   const handleLogout = () => {
+    handleClosePreview();
     setToken(null);
   };
+
+  const handleOpenPreview = async (doc) => {
+    if (previewAbortRef.current) {
+      previewAbortRef.current.abort();
+      previewAbortRef.current = null;
+    }
+    if (previewData?.url) {
+      URL.revokeObjectURL(previewData.url);
+    }
+
+    const reqId = ++previewRequestIdRef.current;
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+
+    setPreviewDoc(doc);
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewData(null);
+
+    try {
+      const res = await getDocumentPreview(doc.id, { signal: controller.signal });
+      if (previewRequestIdRef.current !== reqId) return;
+
+      const contentType = res.headers["content-type"] || "";
+      const blob = res.data;
+
+      if (contentType.startsWith("image/")) {
+        const url = URL.createObjectURL(blob);
+        setPreviewData({ type: "image", url });
+      } else if (contentType.startsWith("application/pdf")) {
+        const url = URL.createObjectURL(blob);
+        setPreviewData({ type: "pdf", url });
+      } else if (contentType.startsWith("text/")) {
+        const text = await blob.text();
+        setPreviewData({ type: "text", text });
+      } else {
+        setPreviewData({ type: "unsupported" });
+      }
+    } catch (err) {
+      if (previewRequestIdRef.current !== reqId) return;
+      if (err.name === "CanceledError" || err.code === "ERR_CANCELED") return;
+
+      console.error("Preview failed:", err);
+      if (err.response?.status === 415) {
+        setPreviewData({ type: "unsupported" });
+      } else {
+        let msg = "Failed to load document preview.";
+        if (err.response?.data instanceof Blob) {
+          try {
+            const errText = await err.response.data.text();
+            const json = JSON.parse(errText);
+            if (json.detail) msg = json.detail;
+          } catch {
+            // ignore
+          }
+        } else if (err.response?.data?.detail) {
+          msg = err.response.data.detail;
+        }
+        setPreviewError(msg);
+      }
+    } finally {
+      if (previewRequestIdRef.current === reqId) {
+        setPreviewLoading(false);
+        previewAbortRef.current = null;
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && previewDoc) {
+        handleClosePreview();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewDoc, previewData]);
+
+  useEffect(() => {
+    return () => {
+      if (previewAbortRef.current) {
+        previewAbortRef.current.abort();
+      }
+      if (previewData?.url) {
+        URL.revokeObjectURL(previewData.url);
+      }
+    };
+  }, [previewData]);
 
   const handleUpload = async (e) => {
   e.preventDefault();
@@ -668,12 +787,22 @@ function App() {
                       </td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPreview(doc)}
+                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                            title="Preview"
+                            aria-label={`Preview ${doc.original_filename}`}
+                          >
+                            <FiEye />
+                          </button>
                           <a
                             href={`${api.defaults.baseURL}/documents/${doc.id}/download?token=${token}`}
                             target="_blank"
                             rel="noreferrer"
                             className="p-2 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                             title="Download"
+                            aria-label={`Download ${doc.original_filename}`}
                           >
                             <FiDownload />
                           </a>
@@ -681,6 +810,7 @@ function App() {
                             onClick={() => handleDeleteDoc(doc.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Delete"
+                            aria-label={`Delete ${doc.original_filename}`}
                           >
                             <FiTrash2 />
                           </button>
@@ -783,6 +913,124 @@ function App() {
               >
                 Refresh
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Document Preview Modal ── */}
+      {previewDoc && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="preview-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-2 truncate">
+                <FiFile className="text-gray-400 text-lg flex-shrink-0" />
+                <h3 id="preview-dialog-title" className="font-semibold text-gray-800 truncate">
+                  {previewDoc.original_filename}
+                </h3>
+                <span className="text-xs text-gray-500">
+                  ({formatFileSize(previewDoc.file_size)})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`${api.defaults.baseURL}/documents/${previewDoc.id}/download?token=${token}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  <FiDownload /> Download
+                </a>
+                <button
+                  type="button"
+                  onClick={handleClosePreview}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  aria-label="Close preview"
+                >
+                  <FiX className="text-xl" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 overflow-auto flex-1 flex flex-col items-center justify-center min-h-[300px]">
+              {previewLoading && (
+                <div className="text-center py-12">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent mb-3" />
+                  <p className="text-sm text-gray-500 font-medium">Loading preview...</p>
+                </div>
+              )}
+
+              {previewError && !previewLoading && (
+                <div className="text-center py-8 max-w-md">
+                  <p className="text-red-600 font-medium mb-2">{previewError}</p>
+                  <p className="text-xs text-gray-500 mb-4">
+                    You can download the original file to view it locally.
+                  </p>
+                  <a
+                    href={`${api.defaults.baseURL}/documents/${previewDoc.id}/download?token=${token}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  >
+                    <FiDownload /> Download File
+                  </a>
+                </div>
+              )}
+
+              {previewData?.type === "unsupported" && !previewLoading && (
+                <div className="text-center py-8 max-w-md">
+                  <p className="text-gray-700 font-medium mb-2">
+                    This file type is not supported for inline preview.
+                  </p>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Inline previews support PNG, JPEG, PDF, and plain text. Download the file to view it on your device.
+                  </p>
+                  <a
+                    href={`${api.defaults.baseURL}/documents/${previewDoc.id}/download?token=${token}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  >
+                    <FiDownload /> Download File
+                  </a>
+                </div>
+              )}
+
+              {previewData?.type === "image" && !previewLoading && (
+                <div className="max-w-full max-h-[70vh] flex items-center justify-center">
+                  <img
+                    src={previewData.url}
+                    alt={previewDoc.original_filename}
+                    className="max-w-full max-h-[70vh] object-contain rounded border shadow-sm"
+                  />
+                </div>
+              )}
+
+              {previewData?.type === "text" && !previewLoading && (
+                <div className="w-full">
+                  <pre className="whitespace-pre-wrap font-mono text-sm p-4 bg-gray-50 rounded-lg border text-gray-800 overflow-auto max-h-[60vh]">
+                    {previewData.text}
+                  </pre>
+                </div>
+              )}
+
+              {previewData?.type === "pdf" && !previewLoading && (
+                <div className="w-full h-[65vh]">
+                  <iframe
+                    src={previewData.url}
+                    title={previewDoc.original_filename}
+                    className="w-full h-full rounded border"
+                    sandbox="allow-scripts"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
